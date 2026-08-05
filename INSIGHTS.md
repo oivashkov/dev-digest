@@ -16,6 +16,22 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-05 — PR list COST column is a total spend, not the latest run's price
+
+**What:** `GET /repos/:id/pulls`'s `PrMeta.cost_usd` now sums `agentRuns.costUsd`
+across every `status='done'` run for that PR, instead of reporting only the
+most recent completed run's cost. `server/src/modules/pulls/routes.ts`
+(`totalCostByPr`), doc comment updated in both vendored copies of
+`contracts/platform.ts`.
+**Why:** explicit user request — the column should answer "what have I spent
+reviewing this PR", not "what would reviewing it cost right now".
+**Rejected:** the prior "latest run wins" behavior, which was itself a
+deliberate, tested decision — `server/test/pulls-cost.it.test.ts` originally
+asserted the OPPOSITE (`// 0.0043 would mean the column summed both runs` was
+the failure case). That test's assertions were inverted to match. **If you
+find yourself "fixing" the sum back to latest-only, check the date on this
+entry first** — it is not a regression, it is the current intended behavior.
+
 ### 2026-07-31 — Standalone packages instead of a workspace
 
 **What:** four packages, each with its own `package.json` and lockfile; sharing
@@ -63,7 +79,15 @@ _None yet._
   `run-executor.ts` and deleting the `agent_runs.cost_usd` column, leaving the
   computation intact. So surfacing cost anywhere costs **zero extra model
   calls** — wire up the existing field, never add a pricing lookup or a second
-  request. `reviewer-core/src/review/run.ts:216`
+  request. `reviewer-core/src/review/run.ts:216`. **Re-added 2026-08-01 in
+  commit `84e2c1e`** (merged via PR #101, branch `mp-l01`): `agent_runs.cost_usd`
+  column, `cost_usd` back on `RunStats`/`RunSummary`/`PrMeta`, and a client
+  `RunCostBadge` wired into the PR list and the Agent-runs Timeline. **Before
+  building a "show me the cost" request as new work, `git log --oneline --all |
+  grep -i cost` first** — in this repo a sibling lab branch may have already
+  merged it; the actual remaining gap on 2026-08-05 was just one more render
+  site (`ReviewRunAccordion`) that this commit hadn't covered, see
+  `client/INSIGHTS.md`.
 
 ## Tool & Library Notes
 

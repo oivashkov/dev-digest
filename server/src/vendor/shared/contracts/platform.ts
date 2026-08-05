@@ -182,8 +182,9 @@ export const PrMeta = z.object({
   updated_at: z.string().nullish(),
   // Latest-review score (list endpoint only; null/absent until reviewed).
   score: z.number().int().nullish(),
-  // USD cost of the LATEST COMPLETED run (list endpoint only). Deliberately not
-  // a sum across runs. Null until a run completes, or when the model is unpriced.
+  // Total USD cost summed across every COMPLETED run for this PR (list
+  // endpoint only) — what has been spent reviewing it, not the last run's
+  // price. Null until at least one run completes with a priced model.
   cost_usd: z.number().nullish(),
 });
 export type PrMeta = z.infer<typeof PrMeta>;

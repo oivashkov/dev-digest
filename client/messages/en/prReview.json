@@ -92,7 +92,7 @@
       "size": "Size",
       "score": "Score",
       "status": "Status",
-      "cost": "Cost",
+      "cost": "Total cost",
       "updated": "Updated"
     },
     "filesCount": "{count} files",

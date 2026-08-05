@@ -75,6 +75,14 @@ export function FindingsTab({
     setTarget((p) => ({ runId, n: (p?.n ?? 0) + 1 }));
   }, []);
 
+  // Each review is produced by exactly one run (review.run_id === RunSummary.run_id,
+  // the same key the Timeline uses to link a run to its accordion). Reuse the
+  // already-fetched run list instead of adding a cost field to ReviewRecord.
+  const costByRunId = React.useMemo(
+    () => new Map((prRuns ?? []).map((r) => [r.run_id, r.cost_usd] as const)),
+    [prRuns],
+  );
+
   return (
     <section>
       {liveRunIds.length > 0 && (
@@ -170,6 +178,7 @@ export function FindingsTab({
             headSha={headSha}
             targetRunId={target?.runId ?? null}
             targetNonce={target?.n ?? 0}
+            cost={review.run_id ? costByRunId.get(review.run_id) ?? null : null}
           />
         ))
       )}
