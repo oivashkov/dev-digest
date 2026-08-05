@@ -103,7 +103,7 @@ export const SettingsUpdate = Settings.partial();
 export type SettingsUpdate = z.infer<typeof SettingsUpdate>;
 
 // ---- Connection test ----
-export const ConnTestProvider = z.enum(['openai', 'anthropic', 'openrouter', 'github']);
+export const ConnTestProvider = z.enum(['openai', 'anthropic', 'openrouter', 'github', 'gitlab']);
 export type ConnTestProvider = z.infer<typeof ConnTestProvider>;
 
 export const ConnTestRequest = z.object({
@@ -128,14 +128,21 @@ export const SecretsStatus = z.object({
   anthropic: z.boolean(),
   openrouter: z.boolean(),
   github: z.boolean(),
+  gitlab: z.boolean(),
 });
 export type SecretsStatus = z.infer<typeof SecretsStatus>;
 
 // ---- Repos ----
 export const RepoInput = z.object({
   url: z.string().url(),
+  /** Skip TLS certificate validation when cloning/calling this repo's host
+   *  (self-signed or expired certs on internal GitLab instances). */
+  insecure_tls: z.boolean().optional().default(false),
 });
 export type RepoInput = z.infer<typeof RepoInput>;
+
+export const RepoProvider = z.enum(['github', 'gitlab']);
+export type RepoProvider = z.infer<typeof RepoProvider>;
 
 export const Repo = z.object({
   id: z.string(),
@@ -147,6 +154,11 @@ export const Repo = z.object({
   clone_path: z.string().nullable(),
   last_polled_at: z.string().nullable(),
   created_by: z.string().nullable(),
+  provider: RepoProvider,
+  /** Git host the repo lives on (e.g. 'github.com', 'gitlab.com', or a self-hosted GitLab). */
+  host: z.string(),
+  /** Whether TLS certificate validation is skipped for this repo's host. */
+  insecure_tls: z.boolean(),
 });
 export type Repo = z.infer<typeof Repo>;
 

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import type { PrMeta, PrDetail, GitHubClient, PrReviewComment } from '@devdigest/shared';
+import type { PrMeta, PrDetail, VcsClient, PrReviewComment } from '@devdigest/shared';
 import { PrCommentInput } from '@devdigest/shared';
 import * as t from '../../db/schema.js';
 import { getContext } from '../_shared/context.js';
@@ -31,18 +31,18 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       .where(and(eq(t.repos.workspaceId, workspaceId), eq(t.repos.id, req.params.id)));
     if (!repo) throw new NotFoundError('Repo not found');
 
-    let gh: GitHubClient | null = null;
+    let gh: VcsClient | null = null;
     try {
-      gh = await container.github();
+      gh = await container.vcsFor(repo);
     } catch (err) {
-      app.log.warn({ err }, 'GitHub client unavailable (no token / offline); serving persisted PRs');
+      app.log.warn({ err }, 'VCS client unavailable (no token / offline); serving persisted PRs');
     }
 
-    // Local-first: sync from GitHub when a token is configured, but never
-    // fail the read — already-imported/seeded PRs stay viewable offline.
+    // Local-first: sync from GitHub/GitLab when a token is configured, but
+    // never fail the read — already-imported/seeded PRs stay viewable offline.
     if (gh) {
       try {
-        const pulls = await gh.listPullRequests({ owner: repo.owner, name: repo.name });
+        const pulls = await gh.listPullRequests({ owner: repo.owner, name: repo.name, host: repo.host });
         for (const pr of pulls) {
           await container.db
             .insert(t.pullRequests)
@@ -73,7 +73,7 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
             });
         }
       } catch (err) {
-        app.log.warn({ err }, 'GitHub PR sync skipped (no token / offline); serving persisted PRs');
+        app.log.warn({ err }, 'PR sync skipped (no token / offline); serving persisted PRs');
       }
     }
 
@@ -93,7 +93,10 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
         .slice(0, BACKFILL_LIMIT);
       for (const r of needStats) {
         try {
-          const detail = await gh.getPullRequest({ owner: repo.owner, name: repo.name }, r.number);
+          const detail = await gh.getPullRequest(
+            { owner: repo.owner, name: repo.name, host: repo.host },
+            r.number,
+          );
           await container.db
             .update(t.pullRequests)
             .set({
@@ -191,12 +194,15 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       .where(eq(t.repos.id, pr.repoId));
     if (!repo) throw new NotFoundError('Repo not found');
 
-    // Local-first: refresh detail from GitHub when a token is configured;
-    // otherwise serve the persisted files/commits/body (seeded or previously
-    // imported) so PR detail works offline.
+    // Local-first: refresh detail from GitHub/GitLab when a token is
+    // configured; otherwise serve the persisted files/commits/body (seeded or
+    // previously imported) so PR detail works offline.
     try {
-      const gh = await container.github();
-      const detail = await gh.getPullRequest({ owner: repo.owner, name: repo.name }, pr.number);
+      const gh = await container.vcsFor(repo);
+      const detail = await gh.getPullRequest(
+        { owner: repo.owner, name: repo.name, host: repo.host },
+        pr.number,
+      );
 
       await container.db.delete(t.prFiles).where(eq(t.prFiles.prId, pr.id));
       if (detail.files.length > 0) {
@@ -236,7 +242,7 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
 
       return { ...detail, id: pr.id };
     } catch (err) {
-      app.log.warn({ err }, 'GitHub PR detail refresh skipped (no token / offline); serving persisted detail');
+      app.log.warn({ err }, 'PR detail refresh skipped (no token / offline); serving persisted detail');
       const files = await container.db.select().from(t.prFiles).where(eq(t.prFiles.prId, pr.id));
       const commits = await container.db.select().from(t.prCommits).where(eq(t.prCommits.prId, pr.id));
       return {
@@ -291,17 +297,20 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
     async (req): Promise<PrReviewComment[]> => {
       const { workspaceId } = await getContext(container, req);
       const { pr, repo } = await resolvePrAndRepo(req.params.id, workspaceId);
-      let gh: GitHubClient;
+      let gh: VcsClient;
       try {
-        gh = await container.github();
+        gh = await container.vcsFor(repo);
       } catch (err) {
-        app.log.warn({ err }, 'GitHub client unavailable; serving no PR comments');
+        app.log.warn({ err }, 'VCS client unavailable; serving no PR comments');
         return [];
       }
       try {
-        return await gh.listReviewComments({ owner: repo.owner, name: repo.name }, pr.number);
+        return await gh.listReviewComments(
+          { owner: repo.owner, name: repo.name, host: repo.host },
+          pr.number,
+        );
       } catch (err) {
-        app.log.warn({ err }, 'GitHub review-comments fetch skipped (offline / error)');
+        app.log.warn({ err }, 'Review-comments fetch skipped (offline / error)');
         return [];
       }
     },
@@ -314,29 +323,33 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       const { workspaceId } = await getContext(container, req);
       const { pr, repo } = await resolvePrAndRepo(req.params.id, workspaceId);
       const input = req.body;
-      let gh: GitHubClient;
+      let gh: VcsClient;
       try {
-        gh = await container.github();
+        gh = await container.vcsFor(repo);
       } catch {
         throw new AppError(
-          'github_unavailable',
-          'Connect a GitHub token to post comments.',
+          'vcs_unavailable',
+          `Connect a ${repo.provider === 'gitlab' ? 'GitLab' : 'GitHub'} token to post comments.`,
           400,
         );
       }
       try {
-        return await gh.createReviewComment({ owner: repo.owner, name: repo.name }, pr.number, {
-          commitId: pr.headSha,
-          path: input.path,
-          line: input.line,
-          ...(input.side ? { side: input.side } : {}),
-          body: input.body,
-          ...(input.in_reply_to != null ? { inReplyTo: input.in_reply_to } : {}),
-        });
+        return await gh.createReviewComment(
+          { owner: repo.owner, name: repo.name, host: repo.host },
+          pr.number,
+          {
+            commitId: pr.headSha,
+            path: input.path,
+            line: input.line,
+            ...(input.side ? { side: input.side } : {}),
+            body: input.body,
+            ...(input.in_reply_to != null ? { inReplyTo: input.in_reply_to } : {}),
+          },
+        );
       } catch (err) {
-        // GitHub rejects comments on lines outside the diff / on closed PRs (422).
-        const msg = err instanceof Error ? err.message : 'Failed to post the comment to GitHub.';
-        throw new AppError('github_comment_failed', msg, 400, { cause: String(err) });
+        // GitHub/GitLab reject comments on lines outside the diff / on closed PRs.
+        const msg = err instanceof Error ? err.message : 'Failed to post the comment.';
+        throw new AppError('vcs_comment_failed', msg, 400, { cause: String(err) });
       }
     },
   );

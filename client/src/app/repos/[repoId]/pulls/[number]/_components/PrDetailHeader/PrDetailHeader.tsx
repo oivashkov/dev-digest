@@ -11,8 +11,9 @@ interface PrDetailHeaderProps {
   prId: string | null;
   tab: string;
   findingsCount: number;
-  /** github.com PR URL; null when the repo's full_name isn't known yet. */
-  githubUrl?: string | null;
+  /** github.com/gitlab.com PR/MR URL; null when the repo's full_name isn't known yet. */
+  vcsUrl?: string | null;
+  vcsProvider?: "github" | "gitlab";
   onSetTab: (tab: string) => void;
   onRunStart: () => void;
   onRunsStarted: () => void;
@@ -23,7 +24,8 @@ export function PrDetailHeader({
   prId,
   tab,
   findingsCount,
-  githubUrl,
+  vcsUrl,
+  vcsProvider = "github",
   onSetTab,
   onRunStart,
   onRunsStarted,
@@ -82,12 +84,12 @@ export function PrDetailHeader({
             kind="ghost"
             size="sm"
             icon="ExternalLink"
-            disabled={!githubUrl}
+            disabled={!vcsUrl}
             onClick={() =>
-              githubUrl && window.open(githubUrl, "_blank", "noopener,noreferrer")
+              vcsUrl && window.open(vcsUrl, "_blank", "noopener,noreferrer")
             }
           >
-            View on GitHub
+            View on {vcsProvider === "gitlab" ? "GitLab" : "GitHub"}
           </Button>
           {prId && (
             <RunReviewDropdown

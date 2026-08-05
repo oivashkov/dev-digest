@@ -98,6 +98,14 @@ export interface Embedder {
 export interface RepoRef {
   owner: string;
   name: string;
+  /** Git host (e.g. a self-hosted GitLab instance). Ignored by GitHub (always github.com). */
+  host?: string;
+  /**
+   * Skip TLS certificate validation for this repo's host — self-signed or
+   * expired certs on internal GitLab instances. Scoped to this repo's
+   * connections only; never toggles Node's TLS verification process-wide.
+   */
+  insecureTls?: boolean;
 }
 
 export interface GitHubReviewPayload {
@@ -163,6 +171,48 @@ export interface GitHubClient {
   findOpenPr(repo: RepoRef, branch: string): Promise<{ url: string } | null>;
   getIssue(repo: RepoRef, n: number): Promise<IssueMeta>;
   /** GET /user — for "posting as @user". */
+  currentLogin(): Promise<string>;
+}
+
+// ---------- GitLab (gitbeaker REST, thin) ----------
+/**
+ * Same method surface as `GitHubClient`, kept as a distinct interface (not a
+ * type alias) so a GitLab-specific field can be added later — e.g. its
+ * discussion/position model — without touching `GitHubClient` or any
+ * existing GitHub route/test. `RepoRef.host` carries the GitLab instance
+ * (gitlab.com or self-hosted).
+ */
+export interface GitLabClient {
+  listPullRequests(repo: RepoRef): Promise<PrMeta[]>;
+  getPullRequest(repo: RepoRef, n: number): Promise<PrDetail>;
+  postReview(repo: RepoRef, n: number, review: GitHubReviewPayload): Promise<{ id: string }>;
+  listReviewComments(repo: RepoRef, n: number): Promise<PrReviewComment[]>;
+  createReviewComment(
+    repo: RepoRef,
+    n: number,
+    input: CreateReviewCommentInput,
+  ): Promise<PrReviewComment>;
+  openPullRequest(repo: RepoRef, payload: OpenPrPayload): Promise<{ url: string }>;
+  commitFiles(repo: RepoRef, payload: CommitFilesPayload): Promise<{ branch: string }>;
+  findOpenPr(repo: RepoRef, branch: string): Promise<{ url: string } | null>;
+  getIssue(repo: RepoRef, n: number): Promise<IssueMeta>;
+  currentLogin(): Promise<string>;
+}
+
+/**
+ * The subset of methods routes actually call (`vcsFor()`'s return type).
+ * Both `GitHubClient` and `GitLabClient` satisfy this structurally.
+ */
+export interface VcsClient {
+  listPullRequests(repo: RepoRef): Promise<PrMeta[]>;
+  getPullRequest(repo: RepoRef, n: number): Promise<PrDetail>;
+  postReview(repo: RepoRef, n: number, review: GitHubReviewPayload): Promise<{ id: string }>;
+  listReviewComments(repo: RepoRef, n: number): Promise<PrReviewComment[]>;
+  createReviewComment(
+    repo: RepoRef,
+    n: number,
+    input: CreateReviewCommentInput,
+  ): Promise<PrReviewComment>;
   currentLogin(): Promise<string>;
 }
 

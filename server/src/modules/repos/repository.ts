@@ -15,6 +15,9 @@ export interface InsertRepo {
   name: string;
   fullName: string;
   createdBy: string;
+  provider: 'github' | 'gitlab';
+  host: string;
+  insecureTls: boolean;
 }
 
 export class RepoRepository {
@@ -50,6 +53,9 @@ export class RepoRepository {
         name: values.name,
         fullName: values.fullName,
         createdBy: values.createdBy,
+        provider: values.provider,
+        host: values.host,
+        insecureTls: values.insecureTls,
       })
       .returning();
     return row!;

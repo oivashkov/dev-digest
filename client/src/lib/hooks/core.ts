@@ -13,6 +13,7 @@ import type {
   ConnTestResult,
   SecretsStatus,
   Repo,
+  RepoInput,
   PrMeta,
   PrDetail,
   SpecFile,
@@ -74,7 +75,7 @@ export function useRepos() {
 export function useAddRepo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (url: string) => api.post<Repo>("/repos", { url }),
+    mutationFn: (input: RepoInput) => api.post<Repo>("/repos", input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["repos"] }),
   });
 }

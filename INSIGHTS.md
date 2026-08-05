@@ -43,6 +43,16 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-04** — `server/src/vendor/shared` and `client/src/vendor/shared`
+  are two independent copies of `@devdigest/shared`, not a symlink or a build
+  step — editing one does NOT update the other, and nothing fails loudly when
+  they drift (the client just keeps stale types). A contract change must be
+  hand-copied into both. The client's copy is also allowed to lag on anything
+  it doesn't import (e.g. it never needed `GitHubClient`/`GitLabClient` from
+  `adapters.ts`, only `Repo`/`RepoProvider` from `contracts/platform.ts`) — diff
+  the specific file before copying wholesale, don't sync files the client
+  doesn't use. `server/src/vendor/shared/contracts/platform.ts`,
+  `client/src/vendor/shared/contracts/platform.ts`
 - **2026-08-01** — Per-run LLM cost is already computed end-to-end; the only
   thing ever missing is persistence. Every provider returns `costUsd` on its
   result, and for OpenRouter it is the REAL billed figure — the client asks for
@@ -61,7 +71,15 @@ _None yet._
 
 ## Recurring Errors & Fixes
 
-_None yet._
+- **2026-08-04** — `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: esbuild,
+  sharp, cpu-features, ssh2, …` on a machine's first `pnpm install` in
+  `server/` or `client/` (pnpm ≥10's build-script approval gate). The app
+  half-boots (API up, but native deps like `ssh2`/`sharp` silently missing
+  their compiled binding) until this is resolved. Fix: `cd server && pnpm
+  approve-builds --all` and the same in `client/`, then re-run
+  `./scripts/dev.sh`. Also needs Node on PATH first — this sandbox requires
+  `nvm use stable` (or `corepack enable`) before any `pnpm`/`npm` command
+  works at all.
 
 ## Open Questions
 

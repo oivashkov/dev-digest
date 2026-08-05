@@ -50,12 +50,13 @@ flowchart LR
 ```
 
 The review flow end to end: **add a repo** → server clones it and `repo-intel`
-indexes it (the **Indexed** badge) → **import PRs** from GitHub → open a PR and
-**Review** → `reviewer-core` assembles a prompt from the diff + the repo map,
-calls the LLM, validates every finding against the diff (the **grounding gate**
-drops hallucinated line references), and persists structured findings with a
-severity and score. All local; the only outbound calls are to GitHub (PR data)
-and the LLM (via OpenRouter).
+indexes it (the **Indexed** badge) → **import PRs/MRs** from GitHub or GitLab
+(gitlab.com or self-hosted) → open a PR and **Review** → `reviewer-core`
+assembles a prompt from the diff + the repo map, calls the LLM, validates every
+finding against the diff (the **grounding gate** drops hallucinated line
+references), and persists structured findings with a severity and score. All
+local; the only outbound calls are to GitHub/GitLab (PR/MR data) and the LLM
+(via OpenRouter).
 
 Each package has its own README with deeper diagrams:
 [`client`](client/README.md) (UI route map) ·
@@ -73,9 +74,11 @@ stay the source of truth — `CLAUDE.md` only points at them. Start at the root
 ## What works on day 1
 
 - **Local launch** — one command brings up Postgres (Docker) + API + web.
-- **Settings** — store your LLM API key (OpenAI / Anthropic) and GitHub token.
-- **Add repository** — paste a repo URL; the server clones and indexes it.
-- **Import pull requests** — pull open PRs and their diff, commits, body, and linked issue.
+- **Settings** — store your LLM API key (OpenAI / Anthropic) and a GitHub or GitLab token.
+- **Add repository** — paste a GitHub or GitLab (incl. self-hosted) repo URL; the
+  server clones and indexes it. An Advanced option skips TLS verification for a
+  self-hosted GitLab instance with a self-signed/expired cert.
+- **Import pull/merge requests** — pull open PRs/MRs and their diff, commits, body, and linked issue.
 - **View diff** — GitHub-like diff in the browser.
 - **Agents** — two built-in reviewers (General + Security); create/edit your own (model + system prompt).
 - **Run a review** — single-pass analysis returning structured findings (severity + score), with the grounding gate and repo-map context working from the start.
@@ -119,7 +122,7 @@ Postgres keeps running (`docker compose down` to stop it).
 Flags: `--no-seed` · `--no-client` · `--db-only` · `--help`.
 
 > Add your keys in `server/.env` (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`,
-> `GITHUB_TOKEN`) or via the Settings UI at runtime.
+> `GITHUB_TOKEN` / `GITLAB_TOKEN`) or via the Settings UI at runtime.
 
 ## Manual steps (what the script does)
 

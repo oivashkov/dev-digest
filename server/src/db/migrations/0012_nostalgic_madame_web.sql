@@ -1,0 +1,1 @@
+ALTER TABLE "repos" ADD COLUMN "insecure_tls" boolean DEFAULT false NOT NULL;

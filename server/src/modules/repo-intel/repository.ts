@@ -61,6 +61,7 @@ export interface RepoBasics {
   name: string;
   defaultBranch: string;
   clonePath: string | null;
+  insecureTls: boolean;
 }
 
 /** Cached row from the existing `symbols` table (blast persists these). */
@@ -141,6 +142,7 @@ export class RepoIntelRepository {
         name: t.repos.name,
         defaultBranch: t.repos.defaultBranch,
         clonePath: t.repos.clonePath,
+        insecureTls: t.repos.insecureTls,
       })
       .from(t.repos)
       .where(eq(t.repos.id, repoId));

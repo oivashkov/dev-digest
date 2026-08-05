@@ -93,7 +93,7 @@ export async function runFullIndex(
     return degradedResult(startedAt, 'no_clone');
   }
 
-  const ref: RepoRef = { owner: repo.owner, name: repo.name };
+  const ref: RepoRef = { owner: repo.owner, name: repo.name, insecureTls: repo.insecureTls };
   const currentSha = await safeCurrentHead(container, ref);
 
   // Walk + filter -------------------------------------------------------

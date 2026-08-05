@@ -8,6 +8,7 @@ import type {
   StructuredResult,
   Embedder,
   GitHubClient,
+  GitLabClient,
   RepoRef,
   PrMeta,
   PrDetail,
@@ -228,6 +229,127 @@ export class MockGitHubClient implements GitHubClient {
   async findOpenPr(_repo: RepoRef, branch: string): Promise<{ url: string } | null> {
     const pr = this.openedPrs.find((p) => p.head === branch);
     return pr ? { url: 'https://github.com/mock/mock/pull/1' } : null;
+  }
+
+  async getIssue(_repo: RepoRef, n: number): Promise<IssueMeta> {
+    return { number: n, title: `Issue #${n}`, body: 'mock issue', state: 'open' };
+  }
+
+  async currentLogin(): Promise<string> {
+    return this.opts.login ?? 'mock-user';
+  }
+}
+
+// ---------- Mock GitLab ----------
+export interface MockGitLabOptions {
+  pulls?: PrMeta[];
+  detail?: Partial<PrDetail>;
+  login?: string;
+  comments?: PrReviewComment[];
+}
+
+/** Deterministic mock for `GitLabClient` — same shape/behavior as MockGitHubClient. */
+export class MockGitLabClient implements GitLabClient {
+  public posted: { n: number; review: GitHubReviewPayload }[] = [];
+  public openedPrs: OpenPrPayload[] = [];
+  public committed: CommitFilesPayload[] = [];
+  public createdComments: CreateReviewCommentInput[] = [];
+
+  constructor(private opts: MockGitLabOptions = {}) {}
+
+  async listPullRequests(_repo: RepoRef): Promise<PrMeta[]> {
+    return (
+      this.opts.pulls ?? [
+        {
+          number: 12,
+          title: 'Add rate limiting to public API endpoints',
+          author: 'marisa.koch',
+          branch: 'feat/rate-limit-public',
+          base: 'main',
+          head_sha: 'a1b2c3d4',
+          additions: 247,
+          deletions: 38,
+          files_count: 9,
+          status: 'open',
+          opened_at: '2026-06-01T00:00:00Z',
+          updated_at: '2026-06-01T03:00:00Z',
+        },
+      ]
+    );
+  }
+
+  async getPullRequest(_repo: RepoRef, n: number): Promise<PrDetail> {
+    const base: PrDetail = {
+      number: n,
+      title: 'Add rate limiting to public API endpoints',
+      author: 'marisa.koch',
+      branch: 'feat/rate-limit-public',
+      base: 'main',
+      head_sha: 'a1b2c3d4',
+      additions: 247,
+      deletions: 38,
+      files_count: 9,
+      status: 'open',
+      body: 'Add rate limiting. Closes #471.',
+      files: [
+        {
+          path: 'src/config.ts',
+          additions: 4,
+          deletions: 0,
+          patch: '@@ -10,3 +10,4 @@\n   port: 3000,\n+  stripeKey: "sk_live_xxx",\n   redisUrl: x,',
+        },
+      ],
+      commits: [
+        { sha: 'a1b2c3d4', message: 'Add limiter', author: 'marisa.koch', committed_at: null },
+      ],
+      linked_issue: null,
+    };
+    return { ...base, ...this.opts.detail };
+  }
+
+  async postReview(_repo: RepoRef, n: number, review: GitHubReviewPayload): Promise<{ id: string }> {
+    this.posted.push({ n, review });
+    return { id: `mock-note-${n}` };
+  }
+
+  async listReviewComments(_repo: RepoRef, _n: number): Promise<PrReviewComment[]> {
+    return this.opts.comments ?? [];
+  }
+
+  async createReviewComment(
+    _repo: RepoRef,
+    _n: number,
+    input: CreateReviewCommentInput,
+  ): Promise<PrReviewComment> {
+    this.createdComments.push(input);
+    return {
+      id: this.createdComments.length,
+      path: input.path,
+      line: input.line,
+      original_line: input.line,
+      side: input.side ?? 'RIGHT',
+      body: input.body,
+      user: this.opts.login ?? 'mock-user',
+      created_at: '2026-06-01T00:00:00Z',
+      html_url: `https://gitlab.com/mock/mock/-/merge_requests/1#note_${this.createdComments.length}`,
+      in_reply_to_id: input.inReplyTo ?? null,
+      is_outdated: false,
+    };
+  }
+
+  async openPullRequest(_repo: RepoRef, payload: OpenPrPayload): Promise<{ url: string }> {
+    this.openedPrs.push(payload);
+    return { url: 'https://gitlab.com/mock/mock/-/merge_requests/1' };
+  }
+
+  async commitFiles(_repo: RepoRef, payload: CommitFilesPayload): Promise<{ branch: string }> {
+    this.committed.push(payload);
+    return { branch: payload.branch };
+  }
+
+  async findOpenPr(_repo: RepoRef, branch: string): Promise<{ url: string } | null> {
+    const pr = this.openedPrs.find((p) => p.head === branch);
+    return pr ? { url: 'https://gitlab.com/mock/mock/-/merge_requests/1' } : null;
   }
 
   async getIssue(_repo: RepoRef, n: number): Promise<IssueMeta> {

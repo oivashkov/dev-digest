@@ -16,11 +16,15 @@ export function FindingsPanel({
   findings,
   prId,
   repoFullName,
+  repoProvider,
+  repoHost,
   headSha,
 }: {
   findings: FindingRecord[];
   prId: string;
   repoFullName?: string | null;
+  repoProvider?: "github" | "gitlab";
+  repoHost?: string;
   headSha?: string | null;
 }) {
   const t = useTranslations("prReview");
@@ -66,6 +70,8 @@ export function FindingsPanel({
               defaultExpanded={i === 0}
               pending={action.isPending}
               repoFullName={repoFullName}
+              repoProvider={repoProvider}
+              repoHost={repoHost}
               headSha={headSha}
               onAction={(act) => action.mutate({ findingId: f.id, action: act, prId })}
             />

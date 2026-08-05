@@ -146,7 +146,7 @@ export class RepoIntelService implements RepoIntel {
     if (!repo || !repo.clonePath) {
       return { status: 'degraded', filesIndexed: 0, filesSkipped: 0, durationMs: Date.now() - startedAt, reason: 'no_clone' };
     }
-    const ref: RepoRef = { owner: repo.owner, name: repo.name };
+    const ref: RepoRef = { owner: repo.owner, name: repo.name, insecureTls: repo.insecureTls };
     try {
       await this.container.git.sync(ref, repo.defaultBranch);
     } catch (err) {
@@ -236,7 +236,7 @@ export class RepoIntelService implements RepoIntel {
     const repo = await this.repo.getRepoBasics(repoId);
     if (!repo || !repo.clonePath || changedFiles.length === 0) return empty;
 
-    const ref: RepoRef = { owner: repo.owner, name: repo.name };
+    const ref: RepoRef = { owner: repo.owner, name: repo.name, insecureTls: repo.insecureTls };
     const changedSet = new Set(changedFiles);
 
     let allSymbols: CodeSymbol[];
@@ -485,7 +485,7 @@ export class RepoIntelService implements RepoIntel {
     }
     if (declaredSymbols.size === 0) return [];
 
-    const ref: RepoRef = { owner: repo.owner, name: repo.name };
+    const ref: RepoRef = { owner: repo.owner, name: repo.name, insecureTls: repo.insecureTls };
     const out: SignatureRow[] = [];
     const seen = new Set<string>();
     // Cache caller-file astgrep parses so we don't re-parse the same file per

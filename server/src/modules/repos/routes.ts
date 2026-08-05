@@ -25,7 +25,12 @@ export default async function reposRoutes(appBase: FastifyInstance) {
 
   app.post('/repos', { schema: { body: RepoInput } }, async (req, reply) => {
     const { workspaceId, userId } = await getContext(app.container, req);
-    const { repo, created } = await service.add(workspaceId, userId, req.body.url);
+    const { repo, created } = await service.add(
+      workspaceId,
+      userId,
+      req.body.url,
+      req.body.insecure_tls,
+    );
     reply.status(created ? 201 : 200);
     return repo;
   });

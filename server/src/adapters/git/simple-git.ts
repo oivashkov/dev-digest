@@ -38,8 +38,14 @@ export class SimpleGitClient implements GitClient {
     return join(this.cloneDir, repo.owner, repo.name);
   }
 
+  /** `-c` overrides to prefix onto every command for this repo (never a
+   *  global git config change — scoped to the one `SimpleGit` instance). */
+  private gitOpts(repo: RepoRef): { config: string[] } {
+    return { config: repo.insecureTls ? ['http.sslVerify=false'] : [] };
+  }
+
   private git(repo: RepoRef): SimpleGit {
-    return simpleGit(this.clonePathFor(repo));
+    return simpleGit(this.clonePathFor(repo), this.gitOpts(repo));
   }
 
   private async exists(path: string): Promise<boolean> {
@@ -56,7 +62,7 @@ export class SimpleGitClient implements GitClient {
     await mkdir(join(this.cloneDir, repo.owner), { recursive: true });
     if (await this.exists(join(dest, '.git'))) {
       // already cloned → fetch latest
-      await simpleGit(dest).fetch();
+      await simpleGit(dest, this.gitOpts(repo)).fetch();
       return { path: dest };
     }
     // A prior clone may have timed out mid-write, leaving a partial dir without
@@ -65,7 +71,7 @@ export class SimpleGitClient implements GitClient {
     const args: string[] = [];
     if (opts?.depth) args.push('--depth', String(opts.depth));
     if (opts?.branch) args.push('--branch', opts.branch);
-    await simpleGit(this.cloneDir).clone(url, dest, args);
+    await simpleGit(this.cloneDir, this.gitOpts(repo)).clone(url, dest, args);
     return { path: dest };
   }
 

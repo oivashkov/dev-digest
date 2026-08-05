@@ -7,6 +7,7 @@ one package. Human-first prose and diagrams; agents read it on demand via the
 | Path             | What                                                         |
 | ---------------- | ------------------------------------------------------------ |
 | `agent-prompts/` | System prompts for the built-in reviewers + model choice notes |
+| `plans/`         | Cross-package feature designs, kept after shipping as a historical decision + incident record (e.g. why GitLab support is shaped the way it is) |
 
 Package-local reference material goes in `<package>/docs/`.
 

@@ -6,7 +6,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Button, Icon, IconBtn, Kbd, TextInput, FormField } from "@devdigest/ui";
+import { Button, Icon, IconBtn, Kbd, TextInput, FormField, Checkbox } from "@devdigest/ui";
 import { useAddRepo } from "@/lib/hooks";
 import { ApiError } from "@/lib/api";
 
@@ -14,6 +14,8 @@ export function AddRepoView() {
   const router = useRouter();
   const [repoUrl, setRepoUrl] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const [insecureTls, setInsecureTls] = React.useState(false);
   const addRepo = useAddRepo();
 
   const close = React.useCallback(() => router.push("/"), [router]);
@@ -31,7 +33,10 @@ export function AddRepoView() {
     if (!repoUrl.trim()) return;
     setError(null);
     try {
-      const repo = await addRepo.mutateAsync(repoUrl.trim());
+      const repo = await addRepo.mutateAsync({
+        url: repoUrl.trim(),
+        insecure_tls: insecureTls,
+      });
       router.push(`/repos/${repo.id}/pulls`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not add repository");
@@ -102,6 +107,63 @@ export function AddRepoView() {
             }}
           />
         </FormField>
+
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((s) => !s)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            marginTop: 14,
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            fontSize: 13,
+            color: "var(--text-muted)",
+          }}
+        >
+          {showAdvanced ? <Icon.ChevronDown size={13} /> : <Icon.ChevronRight size={13} />}
+          Advanced
+        </button>
+
+        {showAdvanced && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "12px 14px",
+              borderRadius: 8,
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <Checkbox
+              checked={insecureTls}
+              onChange={setInsecureTls}
+              label="Skip TLS certificate validation"
+            />
+            <p
+              style={{
+                display: "flex",
+                gap: 8,
+                fontSize: 12,
+                color: "var(--text-muted)",
+                lineHeight: 1.5,
+                marginTop: 8,
+                marginBottom: 0,
+              }}
+            >
+              <Icon.AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1, color: "var(--warn)" }} />
+              <span>
+                Only for a self-hosted GitLab instance you control with a self-signed
+                or expired certificate. This removes protection against a network
+                attacker impersonating the server — do not enable it for a repo
+                you don&apos;t fully trust.
+              </span>
+            </p>
+          </div>
+        )}
 
         {error && (
           <div

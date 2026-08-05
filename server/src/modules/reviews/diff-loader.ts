@@ -18,7 +18,7 @@ export async function loadDiff(
 ): Promise<UnifiedDiff> {
   try {
     const diff = await container.git.diff(
-      { owner: repoRow.owner, name: repoRow.name },
+      { owner: repoRow.owner, name: repoRow.name, insecureTls: repoRow.insecureTls },
       pull.base,
       pull.headSha,
     );
