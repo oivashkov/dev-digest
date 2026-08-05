@@ -9,7 +9,7 @@ export const EMPTY = "—";
  *
  * Run costs span three orders of magnitude — a flash model on a small diff is
  * ~$0.001, a frontier model on a large one is ~$0.10 — so a fixed precision is
- * either lossy at the bottom or noisy at the top. Formatting to 4dp and trimming
+ * either lossy at the bottom or noisy at the top. Formatting to 5dp and trimming
  * trailing zeros (down to a 2dp floor, so whole cents still read as money) gives
  * one rule that renders every band the way a person would write it.
  *
@@ -20,10 +20,10 @@ export const EMPTY = "—";
 export function formatCostUsd(usd: number | null | undefined): string {
   if (usd == null || Number.isNaN(usd)) return EMPTY;
   if (usd === 0) return "$0.00";
-  // Below 4dp resolution the trimmed output would round to "$0.0000", which
+  // Below 5dp resolution the trimmed output would round to "$0.00000", which
   // reads as free. Say "smaller than we display" instead.
-  if (usd < 0.0001) return "<$0.0001";
-  const [whole, frac = ""] = usd.toFixed(4).split(".");
+  if (usd < 0.00001) return "<$0.00001";
+  const [whole, frac = ""] = usd.toFixed(5).split(".");
   return `$${whole}.${frac.replace(/0+$/, "").padEnd(2, "0")}`;
 }
 

@@ -10,6 +10,7 @@ import { Icon, Badge } from "@devdigest/ui";
 import type { ReviewRecord, Verdict } from "@devdigest/shared";
 import { FindingsPanel } from "../FindingsPanel";
 import { VerdictBanner } from "../VerdictBanner";
+import { RunCostBadge } from "../../../../../../../components/run-cost-badge";
 import { useDeleteReview } from "../../../../../../../lib/hooks/reviews";
 
 const VERDICT_COLOR: Record<string, string> = {
@@ -33,6 +34,7 @@ export function ReviewRunAccordion({
   headSha,
   targetRunId = null,
   targetNonce = 0,
+  cost = null,
 }: {
   review: ReviewRecord;
   prId: string;
@@ -45,6 +47,8 @@ export function ReviewRunAccordion({
    *  (driven from the Timeline: clicking an agent name navigates here). */
   targetRunId?: string | null;
   targetNonce?: number;
+  /** USD cost of the run that produced this review. Null when unpriced or unknown. */
+  cost?: number | null;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -107,6 +111,7 @@ export function ReviewRunAccordion({
             {review.score}
           </Badge>
         )}
+        <RunCostBadge cost={cost} />
         <span className="mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {formatWhen(review.created_at)}
         </span>

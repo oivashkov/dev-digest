@@ -42,7 +42,16 @@ _None yet._
 
 ## Codebase Patterns
 
-_None yet._
+- **2026-08-05** — `ReviewRecord` (from `/pulls/:id/reviews`) has no
+  `cost_usd`/tokens fields, but `ReviewRecord.run_id` and `RunSummary.run_id`
+  (from `/pulls/:id/runs`) are the same key — already relied on by
+  `RunHistory`'s `onGoToReview(runId)` to scroll to `#review-run-${run_id}`.
+  When a `ReviewRecord`-based row needs a value that only lives on
+  `RunSummary`, build a `Map(run_id → value)` from the already-fetched
+  `prRuns` where both lists are in scope (`FindingsTab.tsx`) and pass it down
+  as a prop, instead of extending the `ReviewRecord` Zod contract end-to-end.
+  Used to add the cost badge to `ReviewRunAccordion`'s header — zero
+  contract/server changes. `client/src/app/repos/[repoId]/pulls/[number]/_components/FindingsTab/FindingsTab.tsx`
 
 ## Tool & Library Notes
 

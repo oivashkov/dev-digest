@@ -9,12 +9,16 @@ import { formatCostUsd, formatTokenCount, EMPTY } from "./format";
 
 describe("formatCostUsd", () => {
   it("renders each cost band the way the design does", () => {
-    // One rule (4dp, trim trailing zeros, 2dp floor) has to cover three orders
+    // One rule (5dp, trim trailing zeros, 2dp floor) has to cover three orders
     // of magnitude — these are the exact values from the mockups.
     expect(formatCostUsd(0.0013)).toBe("$0.0013"); // flash model, small diff
     expect(formatCostUsd(0.014)).toBe("$0.014");
     expect(formatCostUsd(0.06)).toBe("$0.06"); // whole cents still read as money
     expect(formatCostUsd(0.003)).toBe("$0.003");
+  });
+
+  it("keeps a real 5th-decimal digit instead of trimming it away", () => {
+    expect(formatCostUsd(0.00013)).toBe("$0.00013");
   });
 
   it("distinguishes 'no data' from 'free'", () => {
@@ -24,8 +28,8 @@ describe("formatCostUsd", () => {
     expect(formatCostUsd(0)).toBe("$0.00");
   });
 
-  it("never rounds a real cost down to a free-looking $0.0000", () => {
-    expect(formatCostUsd(0.00002)).toBe("<$0.0001");
+  it("never rounds a real cost down to a free-looking $0.00000", () => {
+    expect(formatCostUsd(0.000005)).toBe("<$0.00001");
   });
 
   it("keeps dollars readable above $1", () => {
