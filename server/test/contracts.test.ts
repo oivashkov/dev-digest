@@ -195,6 +195,9 @@ describe('platform DTOs', () => {
         clone_path: null,
         last_polled_at: null,
         created_by: null,
+        provider: 'github',
+        host: 'github.com',
+        insecure_tls: false,
       }),
     ).not.toThrow();
     expect(() =>

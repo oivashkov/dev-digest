@@ -20,7 +20,7 @@ import {
 import type { FindingRecord, FindingActionKind } from "@devdigest/shared";
 import { SEV_COLOR, SEV_COLOR_FALLBACK } from "./constants";
 import { lineLabel } from "./helpers";
-import { githubBlobUrl } from "../../../../../../../lib/github-urls";
+import { vcsBlobUrl } from "../../../../../../../lib/vcs-urls";
 import { s } from "./styles";
 
 export function FindingCard({
@@ -30,6 +30,8 @@ export function FindingCard({
   onAction,
   pending,
   repoFullName,
+  repoProvider = "github",
+  repoHost = "github.com",
   headSha,
 }: {
   f: FindingRecord;
@@ -38,6 +40,8 @@ export function FindingCard({
   onAction?: (action: FindingActionKind, reply?: string) => void;
   pending?: boolean;
   repoFullName?: string | null;
+  repoProvider?: "github" | "gitlab";
+  repoHost?: string;
   headSha?: string | null;
 }) {
   const t = useTranslations("prReview");
@@ -45,7 +49,7 @@ export function FindingCard({
   const sevColor = SEV_COLOR[f.severity] ?? SEV_COLOR_FALLBACK;
   const fileHref =
     repoFullName && headSha
-      ? githubBlobUrl(repoFullName, headSha, f.file, f.start_line, f.end_line)
+      ? vcsBlobUrl(repoFullName, headSha, f.file, repoProvider, repoHost, f.start_line, f.end_line)
       : undefined;
   const accepted = !!f.accepted_at;
   const dismissed = !!f.dismissed_at;

@@ -27,7 +27,12 @@ pnpm db:seed                                # idempotent demo data
   hand-write a migration file.
 - Secrets are read only through `LocalSecretsProvider`
   (`src/adapters/secrets/local.ts`). `GITHUB_TOKEN` is canonical; `GITHUB_PAT` is
-  accepted as a fallback.
+  accepted as a fallback. `GITLAB_TOKEN` covers every GitLab host (gitlab.com +
+  self-hosted) a workspace references.
+- A repo's VCS provider/host/insecure-TLS are stored columns
+  (`repos.provider|host|insecure_tls`), detected from the URL at add-time —
+  never call `container.github()`/`container.gitlab()` directly from a route;
+  use `container.vcsFor(repo)`.
 
 ## Gotchas
 
@@ -45,4 +50,7 @@ pnpm db:seed                                # idempotent demo data
   `engineering-insights` skill at the end of the task to add to it.
 - Read `README.md` for the API map and the request/DI flow diagram.
 - Read `src/modules/repo-intel/README.md` when touching indexing or the repo map.
+- Read `../docs/plans/gitlab-connector.md` and `../docs/plans/insecure-tls.md`
+  when touching the GitHub/GitLab adapters, `Container.vcsFor()`, or repo
+  URL/TLS handling.
 - Read `../TESTING.md` before adding a test or changing the unit/integration split.

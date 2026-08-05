@@ -18,8 +18,10 @@ interface FindingsTabProps {
   prRuns: RunSummary[] | undefined;
   prCommits: PrCommit[];
   cancelMutation: UseMutationResult<any, any, string, any>;
-  /** owner/repo + head sha — used to deep-link a finding's file:line to GitHub. */
+  /** owner/repo + head sha — used to deep-link a finding's file:line to GitHub/GitLab. */
   repoFullName?: string | null;
+  repoProvider?: "github" | "gitlab";
+  repoHost?: string;
   headSha?: string | null;
   onOpenTrace: (id: string) => void;
   onDelete: (id: string) => void;
@@ -36,6 +38,8 @@ export function FindingsTab({
   prCommits,
   cancelMutation,
   repoFullName,
+  repoProvider,
+  repoHost,
   headSha,
   onOpenTrace,
   onDelete,
@@ -161,6 +165,8 @@ export function FindingsTab({
             prId={prId}
             defaultOpen={i === 0}
             repoFullName={repoFullName}
+            repoProvider={repoProvider}
+            repoHost={repoHost}
             headSha={headSha}
             targetRunId={target?.runId ?? null}
             targetNonce={target?.n ?? 0}

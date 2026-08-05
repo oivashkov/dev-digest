@@ -4,6 +4,7 @@ import {
   MockLLMProvider,
   MockGitClient,
   MockGitHubClient,
+  MockGitLabClient,
   MockCodeIndex,
   MockEmbedder,
 } from '../src/adapters/mocks.js';
@@ -30,6 +31,39 @@ describe('mock adapters (no network)', () => {
       body: 'b',
     });
     expect(url).toContain('github.com');
+  });
+
+  it('MockGitLabClient records posted reviews and opened MRs (parity with MockGitHubClient)', async () => {
+    const gl = new MockGitLabClient();
+    await gl.postReview({ owner: 'a', name: 'b' }, 12, { body: 'x', event: 'COMMENT' });
+    expect(gl.posted).toHaveLength(1);
+    const { url } = await gl.openPullRequest({ owner: 'a', name: 'b' }, {
+      title: 't',
+      head: 'h',
+      base: 'main',
+      body: 'b',
+    });
+    expect(url).toContain('gitlab.com');
+  });
+
+  it('MockGitLabClient supports the full 10-method GitHubClient-parity surface', async () => {
+    const gl = new MockGitLabClient();
+    const repo = { owner: 'a', name: 'b' };
+    expect((await gl.listPullRequests(repo))[0]!.number).toBeDefined();
+    expect((await gl.getPullRequest(repo, 12)).number).toBe(12);
+    expect(await gl.listReviewComments(repo, 12)).toEqual([]);
+    const comment = await gl.createReviewComment(repo, 12, {
+      commitId: 'sha',
+      path: 'src/x.ts',
+      line: 3,
+      body: 'note',
+    });
+    expect(comment.path).toBe('src/x.ts');
+    await gl.commitFiles(repo, { branch: 'b', base: 'main', message: 'm', files: [] });
+    expect(gl.committed).toHaveLength(1);
+    expect(await gl.findOpenPr(repo, 'nonexistent')).toBeNull();
+    expect((await gl.getIssue(repo, 5)).number).toBe(5);
+    expect(await gl.currentLogin()).toBe('mock-user');
   });
 
   it('MockCodeIndex + MockEmbedder return deterministic shapes', async () => {

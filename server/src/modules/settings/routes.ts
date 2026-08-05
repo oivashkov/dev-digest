@@ -9,7 +9,12 @@ import {
 } from '@devdigest/shared';
 import * as t from '../../db/schema.js';
 import { getContext } from '../_shared/context.js';
-import { GITHUB_PROVIDER, SECRET_KEY_BY_PROVIDER } from './constants.js';
+import {
+  GITHUB_PROVIDER,
+  GITLAB_PROVIDER,
+  DEFAULT_GITLAB_HOST,
+  SECRET_KEY_BY_PROVIDER,
+} from './constants.js';
 import { rowsToSettings } from './helpers.js';
 
 /**
@@ -86,6 +91,14 @@ export default async function settingsRoutes(appBase: FastifyInstance) {
       if (provider === GITHUB_PROVIDER) {
         const gh = await container.github();
         const login = await gh.currentLogin();
+        return { provider, ok: true, message: `Connected as @${login}` };
+      }
+      if (provider === GITLAB_PROVIDER) {
+        // No repo to read a host from at this point (test-connection isn't
+        // repo-scoped) — defaults to gitlab.com; self-hosted instances are
+        // tested implicitly the first time a repo on that host is added.
+        const gl = await container.gitlab(DEFAULT_GITLAB_HOST);
+        const login = await gl.currentLogin();
         return { provider, ok: true, message: `Connected as @${login}` };
       }
       const llm = await container.llm(provider);

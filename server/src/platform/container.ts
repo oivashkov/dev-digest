@@ -2,6 +2,8 @@ import type {
   AuthProvider,
   SecretsProvider,
   GitHubClient,
+  GitLabClient,
+  VcsClient,
   GitClient,
   CodeIndex,
   Embedder,
@@ -14,6 +16,7 @@ import { runBus, type RunBus } from './sse.js';
 import { LocalSecretsProvider } from '../adapters/secrets/local.js';
 import { LocalNoAuthProvider } from '../adapters/auth/local.js';
 import { OctokitGitHubClient } from '../adapters/github/octokit.js';
+import { GitbeakerGitLabClient } from '../adapters/gitlab/gitbeaker.js';
 import { SimpleGitClient } from '../adapters/git/simple-git.js';
 import { RipgrepCodeIndex } from '../adapters/codeindex/ripgrep.js';
 import { OpenAIProvider } from '../adapters/llm/openai.js';
@@ -41,6 +44,7 @@ export interface ContainerOverrides {
   secrets?: SecretsProvider;
   auth?: AuthProvider;
   github?: GitHubClient;
+  gitlab?: GitLabClient;
   git?: GitClient;
   codeIndex?: CodeIndex;
   embedder?: Embedder;
@@ -63,6 +67,7 @@ export class Container {
 
   private _git?: GitClient;
   private _github?: GitHubClient;
+  private _gitlabByHost = new Map<string, GitLabClient>();
   private _codeIndex?: CodeIndex;
   private _embedder?: Embedder;
   private llmCache = new Map<string, LLMProvider>();
@@ -159,6 +164,34 @@ export class Container {
     return this._github;
   }
 
+  /**
+   * Resolve a GitLab client for `host` (gitlab.com or a self-hosted
+   * instance). Cached per host+insecureTls — a workspace can plausibly
+   * reference more than one GitLab instance, unlike GitHub's single-host
+   * `github()`, and (in principle) two repos on the same host could disagree
+   * on whether to skip TLS verification.
+   */
+  async gitlab(host: string, insecureTls = false): Promise<GitLabClient> {
+    if (this.overrides.gitlab) return this.overrides.gitlab;
+    const key = `${host}::${insecureTls}`;
+    const cached = this._gitlabByHost.get(key);
+    if (cached) return cached;
+    const token = await this.secrets.get('GITLAB_TOKEN');
+    if (!token) throw new ConfigError('GITLAB_TOKEN is not configured');
+    const client = new GitbeakerGitLabClient(token, host, insecureTls);
+    this._gitlabByHost.set(key, client);
+    return client;
+  }
+
+  /** Resolve the right VCS client for a repo row, by its stored provider/host. */
+  async vcsFor(repo: {
+    provider: 'github' | 'gitlab';
+    host: string;
+    insecureTls?: boolean;
+  }): Promise<VcsClient> {
+    return repo.provider === 'gitlab' ? this.gitlab(repo.host, repo.insecureTls) : this.github();
+  }
+
   /** Resolve an LLM provider by id; constructs from the secret key, cached. */
   async llm(id: 'openai' | 'anthropic' | 'openrouter'): Promise<LLMProvider> {
     const injected = this.overrides.llm?.[id];
@@ -214,6 +247,7 @@ export class Container {
   invalidateSecretCaches(): void {
     this.llmCache.clear();
     this._github = undefined;
+    this._gitlabByHost.clear();
     this._embedder = undefined;
   }
 }

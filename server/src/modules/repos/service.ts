@@ -1,12 +1,13 @@
 import type { Container } from '../../platform/container.js';
-import { type Repo } from '@devdigest/shared';
+import { type Repo, type RepoProvider } from '@devdigest/shared';
 import { NotFoundError } from '../../platform/errors.js';
 import { RepoRepository } from './repository.js';
-import { parseRepoUrl, withGitHubToken, toRepoDto } from './helpers.js';
+import { parseRepoUrl, withVcsToken, toRepoDto } from './helpers.js';
 import {
   CLONE_JOB_KIND,
   CLONE_DEPTH,
   GITHUB_TOKEN_SECRET,
+  GITLAB_TOKEN_SECRET,
 } from './constants.js';
 import {
   INDEX_JOB_KIND,
@@ -28,6 +29,9 @@ export interface CloneJobPayload {
   owner: string;
   name: string;
   url: string;
+  provider: RepoProvider;
+  host: string;
+  insecureTls: boolean;
 }
 
 export class RepoService {
@@ -49,10 +53,11 @@ export class RepoService {
   }
 
   async runCloneJob(payload: CloneJobPayload): Promise<void> {
-    const { repoId, owner, name, url } = payload;
-    const token = await this.container.secrets.get(GITHUB_TOKEN_SECRET);
-    const cloneUrl = token ? withGitHubToken(url, token) : url;
-    const { path } = await this.container.git.clone({ owner, name }, cloneUrl, {
+    const { repoId, owner, name, url, provider, insecureTls } = payload;
+    const secretKey = provider === 'gitlab' ? GITLAB_TOKEN_SECRET : GITHUB_TOKEN_SECRET;
+    const token = await this.container.secrets.get(secretKey);
+    const cloneUrl = token ? withVcsToken(url, token, provider) : url;
+    const { path } = await this.container.git.clone({ owner, name, insecureTls }, cloneUrl, {
       depth: CLONE_DEPTH,
     });
     await this.repo.updateClonePath(repoId, path);
@@ -87,19 +92,32 @@ export class RepoService {
     workspaceId: string,
     userId: string,
     url: string,
+    insecureTls = false,
   ): Promise<{ repo: Repo; created: boolean }> {
-    const { owner, name } = parseRepoUrl(url);
+    const { owner, name, provider, host } = parseRepoUrl(url);
     const fullName = `${owner}/${name}`;
 
     const existing = await this.repo.findByFullName(workspaceId, fullName);
     if (existing) return { repo: toRepoDto(existing), created: false };
 
-    const row = await this.repo.insert({ workspaceId, owner, name, fullName, createdBy: userId });
+    const row = await this.repo.insert({
+      workspaceId,
+      owner,
+      name,
+      fullName,
+      createdBy: userId,
+      provider,
+      host,
+      insecureTls,
+    });
     await this.container.jobs.enqueue(workspaceId, CLONE_JOB_KIND, {
       repoId: row.id,
       owner,
       name,
       url,
+      provider,
+      host,
+      insecureTls,
     } satisfies CloneJobPayload);
 
     return { repo: toRepoDto(row), created: true };
@@ -118,7 +136,10 @@ export class RepoService {
       repoId: repo.id,
       owner: repo.owner,
       name: repo.name,
-      url: `https://github.com/${repo.fullName}.git`,
+      url: `https://${repo.host}/${repo.fullName}.git`,
+      provider: repo.provider as RepoProvider,
+      host: repo.host,
+      insecureTls: repo.insecureTls,
     } satisfies CloneJobPayload);
     // T2.2 — also enqueue an incremental refresh. The two queue positions are
     // independent (p-queue doesn't FIFO across kinds), but `runIncremental` is

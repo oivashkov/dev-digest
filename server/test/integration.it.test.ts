@@ -6,7 +6,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/platform/config.js';
 import { seed } from '../src/db/seed.js';
 import * as t from '../src/db/schema.js';
-import { MockGitClient, MockGitHubClient } from '../src/adapters/mocks.js';
+import { MockGitClient, MockGitHubClient, MockGitLabClient } from '../src/adapters/mocks.js';
 
 const hasDocker = await dockerAvailable();
 const d = hasDocker ? describe : describe.skip;
@@ -109,6 +109,87 @@ d('Testcontainers: DB-backed routes via app.inject', () => {
     expect(list.json().some((r: { full_name: string }) => r.full_name === 'acme/widgets')).toBe(
       true,
     );
+    await app.close();
+  });
+
+  it('POST /repos on a github.com URL defaults provider/host; a gitlab.com URL persists provider="gitlab" and routes to the GitLab client', async () => {
+    const config = loadConfig({ ...process.env, NODE_ENV: 'test' } as NodeJS.ProcessEnv);
+    const gitlab = new MockGitLabClient();
+    const app = await buildApp({
+      config,
+      db: pg.handle.db,
+      overrides: { git: new MockGitClient(), github: new MockGitHubClient(), gitlab },
+    });
+
+    const ghCreate = await app.inject({
+      method: 'POST',
+      url: '/repos',
+      payload: { url: 'https://github.com/acme/gh-repo' },
+    });
+    expect(ghCreate.statusCode).toBe(201);
+    expect(ghCreate.json().provider).toBe('github');
+    expect(ghCreate.json().host).toBe('github.com');
+    expect(ghCreate.json().insecure_tls).toBe(false);
+
+    const glCreate = await app.inject({
+      method: 'POST',
+      url: '/repos',
+      payload: { url: 'https://gitlab.com/acme/gl-repo' },
+    });
+    expect(glCreate.statusCode).toBe(201);
+    expect(glCreate.json().provider).toBe('gitlab');
+    expect(glCreate.json().host).toBe('gitlab.com');
+    expect(glCreate.json().insecure_tls).toBe(false);
+
+    await app.container.jobs.onIdle();
+    const [row] = await pg.handle.db
+      .select()
+      .from(t.repos)
+      .where(eq(t.repos.id, glCreate.json().id));
+    expect(row?.provider).toBe('gitlab');
+    expect(row?.host).toBe('gitlab.com');
+    expect(row?.insecureTls).toBe(false);
+
+    // Round-trips through Container.vcsFor(): a GitLab repo's PR list comes
+    // from the injected MockGitLabClient, not MockGitHubClient.
+    const pulls = await app.inject({
+      method: 'GET',
+      url: `/repos/${glCreate.json().id}/pulls`,
+    });
+    expect(pulls.statusCode).toBe(200);
+    expect(pulls.json().length).toBeGreaterThan(0);
+
+    await app.close();
+  });
+
+  it('POST /repos with insecure_tls: true persists on a self-hosted GitLab repo', async () => {
+    const config = loadConfig({ ...process.env, NODE_ENV: 'test' } as NodeJS.ProcessEnv);
+    const app = await buildApp({
+      config,
+      db: pg.handle.db,
+      overrides: {
+        git: new MockGitClient(),
+        github: new MockGitHubClient(),
+        gitlab: new MockGitLabClient(),
+      },
+    });
+
+    const create = await app.inject({
+      method: 'POST',
+      url: '/repos',
+      payload: { url: 'https://gitlab.mycompany.internal/team/service', insecure_tls: true },
+    });
+    expect(create.statusCode).toBe(201);
+    expect(create.json().provider).toBe('gitlab');
+    expect(create.json().host).toBe('gitlab.mycompany.internal');
+    expect(create.json().insecure_tls).toBe(true);
+
+    const [row] = await pg.handle.db
+      .select()
+      .from(t.repos)
+      .where(eq(t.repos.id, create.json().id));
+    expect(row?.insecureTls).toBe(true);
+
     await app.close();
   });
 

@@ -1,10 +1,10 @@
 # `@devdigest/api` — the engine (Fastify + Postgres)
 
-The DevDigest backend: imports repos and pull requests, indexes a repo with
-`repo-intel`, stores agents, and runs the reviewer (diff → `reviewer-core` →
-grounded structured findings). Fastify 5 + Drizzle ORM over Postgres (pgvector).
-Adapters (LLM, GitHub, git, ast-grep, …) sit behind a DI container so they can be
-swapped for mocks in tests.
+The DevDigest backend: imports repos and pull/merge requests, indexes a repo
+with `repo-intel`, stores agents, and runs the reviewer (diff → `reviewer-core`
+→ grounded structured findings). Fastify 5 + Drizzle ORM over Postgres
+(pgvector). Adapters (LLM, GitHub, GitLab, git, ast-grep, …) sit behind a DI
+container so they can be swapped for mocks in tests.
 
 > This is the **starter** module set. Later course lessons add their own modules
 > (skills, intent/smart-diff, blast, brief/context/onboarding, eval/ci/hooks,
@@ -26,7 +26,10 @@ swapped for mocks in tests.
   `0600`, written when you enter a key in Settings) with `process.env` as a
   fallback — never in git or the database. The one read chokepoint is
   `LocalSecretsProvider` (`src/adapters/secrets/local.ts`); `GITHUB_TOKEN` is
-  canonical and `GITHUB_PAT` is accepted as a fallback.
+  canonical and `GITHUB_PAT` is accepted as a fallback. `GITLAB_TOKEN`
+  authenticates every GitLab host a workspace references (gitlab.com and any
+  self-hosted instance share the one token — see
+  [`../docs/plans/gitlab-connector.md`](../docs/plans/gitlab-connector.md)).
 
 ## Request & DI flow
 
@@ -37,8 +40,8 @@ flowchart LR
   VAL --> MOD["feature module plugin<br/>modules/&lt;name&gt;/routes.ts"]
   MOD --> SVC["service<br/>(e.g. ReviewService)"]
   SVC --> DI{"DI container<br/>platform/container.ts"}
-  DI --> ADP["adapters (ports)<br/>llm · github · git · astgrep · tokenizer · secrets"]
-  ADP -->|"prod"| EXT["LLM (OpenAI/Anthropic) · GitHub · git · pgvector"]
+  DI --> ADP["adapters (ports)<br/>llm · github · gitlab · git · astgrep · tokenizer · secrets"]
+  ADP -->|"prod"| EXT["LLM (OpenAI/Anthropic) · GitHub/GitLab · git · pgvector"]
   ADP -->|"tests"| MOCK["src/adapters/mocks.ts<br/>MockLLMProvider · MockGitClient · …"]
   SVC --> DB[("Drizzle → Postgres")]
   SVC -. "run traces" .-> SSE["SSE stream → client"]
@@ -94,6 +97,7 @@ flowchart TB
 | `API_PORT` / `WEB_PORT` | `3001` / `3000` | API port; `WEB_PORT` also sets the allowed CORS origin |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` | — | optional, per-provider; also settable via Settings UI |
 | `GITHUB_TOKEN` | — | optional; PAT with repo scope (`GITHUB_PAT` accepted as a fallback) |
+| `GITLAB_TOKEN` | — | optional; PAT with `api` + `read_repository` scopes. One token for every GitLab host (gitlab.com or self-hosted) a workspace references |
 | `EMBEDDINGS_ENABLED` | `false` | memory/RAG embeddings (OpenAI); off → **zero** OpenAI calls |
 | `REPO_INTEL_ENABLED` | `true` | repo skeleton + callers in the prompt; `false` → ripgrep-only |
 | `DEVDIGEST_CLONE_DIR` | `./clones` | imported-repo checkouts (git-ignored) |
@@ -107,6 +111,21 @@ through `SecretsProvider` (`~/.devdigest/secrets.json`, mode `0600`, with
 Migrations are **not** applied on boot — run `pnpm db:migrate` (pgvector is
 enabled by migration `0000`). `pnpm db:seed` is idempotent demo data
 (`acme/payments-api`, PR #482, the two built-in agents).
+
+## VCS providers (non-obvious)
+
+- **Provider and host are detected from the URL, not chosen explicitly.**
+  `POST /repos` parses the pasted URL: `github.com` → GitHub; any other host
+  → GitLab-API-compatible (gitlab.com or self-hosted), storing both
+  `provider` and `host` on the `repos` row. There is no "provider" dropdown.
+- **`Container.vcsFor(repo)`** resolves the right adapter
+  (`GitHubClient`/`GitLabClient`) per repo from those two stored columns —
+  routes never call `container.github()`/`container.gitlab()` directly.
+- **Self-hosted GitLab with a bad cert**: a per-repo `insecure_tls` flag
+  (Advanced option on Add Repository, off by default) skips TLS certificate
+  validation for that repo's connections only — both the GitLab API client
+  and `git clone`/`fetch`. Never a process-wide TLS bypass. See
+  [`../docs/plans/insecure-tls.md`](../docs/plans/insecure-tls.md).
 
 ## Review context (non-obvious)
 
