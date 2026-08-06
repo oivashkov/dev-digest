@@ -29,8 +29,21 @@ them here.
 
 ## Decisions
 
-_None yet. Add the first one the next time a UI approach is tried and
-abandoned — that is exactly what this file is for._
+### 2026-08-06 — Hover popovers render through a portal, not `position: absolute`
+
+**What:** the FINDINGS column's per-severity hover tooltip
+(`src/components/hover-popover/HoverPopover.tsx`) renders its panel via
+`createPortal(document.body)`, positioned with `position: fixed` computed
+from the trigger's `getBoundingClientRect()` on open, instead of an
+`absolute` child of the trigger like `@devdigest/ui`'s `Dropdown`.
+**Why:** the PR list's `pulls/styles.ts` `s.tableCard` has `overflow:
+"hidden"` (needed so row-hover backgrounds respect the card's rounded
+corners) — any `absolute` panel inside it gets clipped at the card's edge,
+which breaks a tooltip meant to float over the rows below.
+**Rejected:** copying `Dropdown`'s `position: absolute` pattern directly —
+works fine for `Dropdown` because none of its call sites sit inside an
+`overflow: hidden` ancestor; the PR list table is the first place that
+constraint bites.
 
 ## What Works
 
@@ -42,6 +55,15 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-06** — A component that is a direct child of `PRRow`'s CSS grid
+  (`pulls/styles.ts` `s.row`, `gridTemplateColumns: GRID`) must never
+  `return null` for its "empty" state, even though that's the normal React
+  idiom — grid track assignment follows DOM children in order, and a `null`
+  render drops the node from the DOM entirely, shifting every later column
+  one track to the left (STATUS renders under FINDINGS' header, etc.).
+  Render an empty `<div />` instead so the cell still claims its track.
+  `FindingsCell` hit this for the "reviewed, zero outstanding findings" case.
+  `src/app/repos/[repoId]/pulls/_components/PRRow/_components/FindingsCell/FindingsCell.tsx`
 - **2026-08-05** — `ReviewRecord` (from `/pulls/:id/reviews`) has no
   `cost_usd`/tokens fields, but `ReviewRecord.run_id` and `RunSummary.run_id`
   (from `/pulls/:id/runs`) are the same key — already relied on by
