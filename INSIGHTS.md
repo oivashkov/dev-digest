@@ -16,6 +16,22 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-06 — AGENTS.md as source of truth, CLAUDE.md a thin `@AGENTS.md` import
+
+**What:** each of the 5 curated agent-notes files (root + one per package) is
+now `<pkg>/AGENTS.md` holding the actual content (stack, commands,
+conventions, gotchas, read-when); `<pkg>/CLAUDE.md` shrinks to a first-line
+`@AGENTS.md` import plus a short Claude-Code-only addendum (the
+`engineering-insights` skill invocation).
+**Why:** Claude Code has no native `AGENTS.md` support as of mid-2026 (only
+the documented `@path` import), while Codex, Cursor, Copilot, Gemini CLI and
+Windsurf read `AGENTS.md` natively. Splitting keeps one editable source of
+truth instead of two copies.
+**Rejected:** a plain `ln -s AGENTS.md CLAUDE.md` symlink — simpler and
+driftproof, but the ~95%-generic file has one Claude-only line (which skill to
+invoke for `INSIGHTS.md`), and a real symlink leaves no room for that without
+polluting the file every other agent reads.
+
 ### 2026-08-05 — PR list COST column is a total spend, not the latest run's price
 
 **What:** `GET /repos/:id/pulls`'s `PrMeta.cost_usd` now sums `agentRuns.costUsd`
@@ -104,6 +120,18 @@ _None yet._
 
 ## Recurring Errors & Fixes
 
+- **2026-08-06** — Reading files before `git checkout <branch>` (or a
+  `git reset --hard` onto a moved remote branch) and writing their (mentally
+  cached) content afterward can silently carry over content that only existed
+  on the old ref. The stale-write guard ("File has been modified since read")
+  only fires if the target file's bytes actually changed between the Read and
+  the Write, so it caught `server/CLAUDE.md` here but stayed silent for files
+  whose content happened to match. After switching branches or rebasing mid-
+  task, `git diff --stat <old-ref> <new-ref> -- <paths>` the specific files
+  before trusting an earlier Read, rather than relying on the guard alone —
+  also applies to `git push` rejections: `git fetch` + diff the remote before
+  reapplying local doc edits, don't assume the base you built commits on is
+  still current.
 - **2026-08-04** — `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: esbuild,
   sharp, cpu-features, ssh2, …` on a machine's first `pnpm install` in
   `server/` or `client/` (pnpm ≥10's build-script approval gate). The app
