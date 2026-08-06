@@ -91,7 +91,16 @@ _None yet._
 
 ## Tool & Library Notes
 
-_None yet._
+- **2026-08-06** — `server`'s hermetic vitest suite (`pnpm exec vitest run
+  --exclude '**/*.it.test.ts'`) crashes the whole run intermittently on Node
+  v24.4.0 with `RangeError: Maximum call stack size exceeded` inside
+  `tinypool@1.1.1`'s worker-pool teardown (`ProcessWorker.terminate` /
+  `WorkerInfo.destroy`), not inside any test. It is a pool-teardown race, not
+  a code regression — reproduces identically on an unmodified checkout
+  (confirmed via `git stash`) and is non-deterministic (passed 2 of 3 runs
+  back-to-back with no code change). If the run crashes without an assertion
+  failure in the output, re-run before suspecting your change; to sidestep
+  it for one file, add `--pool=forks --poolOptions.forks.singleFork`.
 
 ## Recurring Errors & Fixes
 

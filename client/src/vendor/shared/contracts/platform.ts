@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Provider } from './knowledge.js';
+import { Finding } from './findings.js';
 
 /**
  * Platform / scaffolding DTOs owned by F1:
@@ -186,6 +187,10 @@ export const PrMeta = z.object({
   // endpoint only) — what has been spent reviewing it, not the last run's
   // price. Null until at least one run completes with a priced model.
   cost_usd: z.number().nullish(),
+  // Findings on the latest review, dismissed ones excluded (list endpoint
+  // only). Same null-until-reviewed lifecycle as `score`; an empty array
+  // means reviewed with nothing outstanding.
+  findings: z.array(Finding).nullish(),
 });
 export type PrMeta = z.infer<typeof PrMeta>;
 
