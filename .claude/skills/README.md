@@ -7,6 +7,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | Skill | Scope | Description |
 |-------|-------|-------------|
 | [engineering-insights](engineering-insights/SKILL.md) | Project | Read `<module>/INSIGHTS.md` before a task, record what was learned after |
+| [pr-self-review](pr-self-review/SKILL.md) | Project | Maps a diff to applicable skills, reviews, blocks the PR on any CRITICAL finding |
 | [backend-onion-architecture](backend-onion-architecture/SKILL.md) | Backend | Onion layering in server/ — routes/service/repository/adapters, dependency direction |
 | [fastify-best-practices](fastify-best-practices/SKILL.md) | Backend | Fastify routes, plugins, JSON-schema validation, error handling |
 | [drizzle-orm-patterns](drizzle-orm-patterns/SKILL.md) | Backend | Drizzle schema, queries, relations, transactions, migrations |
