@@ -16,6 +16,8 @@
     "gitlabLabel": "GitLab personal access token",
     "gitlabHint": "api + read_repository scopes. Works for gitlab.com and self-hosted instances — the host is read from each repo's URL.",
     "placeholder": "•••• stored via SecretsProvider (.env)",
+    "revealKey": "Show key",
+    "hideKey": "Hide key",
     "testConnection": "Test connection",
     "testing": "Testing…",
     "testFailed": "Test failed",

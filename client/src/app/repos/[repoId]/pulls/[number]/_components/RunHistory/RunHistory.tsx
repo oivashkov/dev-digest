@@ -216,15 +216,25 @@ export function RunHistory({
               <Icon.FileText size={13} />
             </button>
             {onDelete && r.status !== "running" && (
-              <span
-                role="button"
+              <button
+                type="button"
                 aria-label={t("timeline.deleteRun")}
                 title={t("timeline.deleteRun")}
                 onClick={() => onDelete(r.run_id)}
-                style={{ display: "inline-flex", padding: 3, borderRadius: 5, color: "var(--text-muted)", flexShrink: 0, cursor: "pointer" }}
+                style={{
+                  display: "inline-flex",
+                  padding: 3,
+                  borderRadius: 5,
+                  color: "var(--text-muted)",
+                  flexShrink: 0,
+                  cursor: "pointer",
+                  background: "transparent",
+                  border: "none",
+                  font: "inherit",
+                }}
               >
                 <Icon.Trash size={13} />
-              </span>
+              </button>
             )}
           </div>
         );
