@@ -55,6 +55,24 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-10** — `@devdigest/ui`'s barrel (`vendor/ui/index.ts`)
+  unconditionally re-exports `./charts` (Recharts-based `LineChart` etc.),
+  which is not safe to evaluate in the RSC/server bundle — importing
+  anything from `@devdigest/ui` in a Server Component throws `TypeError:
+  Super expression must either be null or a function` at
+  `vendor/ui/charts/LineChart.tsx` (a class `extends` resolves to
+  `undefined` server-side). Every route segment shares the same module
+  graph, so this crashes the *entire app* (`GET / 500`), not just the one
+  broken page. **Rule: any file importing from `@devdigest/ui` MUST be
+  `"use client"`** — no exceptions, even for a component that otherwise
+  needs zero interactivity (e.g. `not-found.tsx` needed it only for
+  `EmptyState`). `client/src/app/not-found.tsx`, `vendor/ui/index.ts:60`.
+  **Verification gap**: `next build`'s static-generation path did NOT
+  reproduce this — it prerendered `/_not-found` successfully both broken
+  and fixed. Only `next dev` + an actual `curl` against a booted server
+  surfaced it. `next build`/`tsc`/vitest passing is not sufficient
+  evidence a Server Component boundary is safe — boot `pnpm dev` and hit
+  the real routes when adding or changing one.
 - **2026-08-06** — A component that is a direct child of `PRRow`'s CSS grid
   (`pulls/styles.ts` `s.row`, `gridTemplateColumns: GRID`) must never
   `return null` for its "empty" state, even though that's the normal React
