@@ -3,12 +3,18 @@ import { now } from './_shared';
 
 // ============================================================ Tenancy & core
 
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').notNull(),
-  name: text('name').notNull(),
-  createdAt: now(),
-});
+export const users = pgTable(
+  'users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: text('email').notNull(),
+    name: text('name').notNull(),
+    createdAt: now(),
+  },
+  (t) => ({
+    emailUq: uniqueIndex('users_email_uq').on(t.email),
+  }),
+);
 
 export const workspaces = pgTable('workspaces', {
   id: uuid('id').primaryKey().defaultRandom(),

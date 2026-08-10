@@ -20,7 +20,10 @@ export function AgentEditor({ agent, tab, onTab }: { agent: Agent; tab: string; 
         <Tabs tabs={tabs} value={tab} onChange={onTab} pad="0 24px" />
       </div>
       <div style={s.body}>
-        <ConfigTab agent={agent} />
+        {/* key={agent.id} remounts (not just re-renders) ConfigTab when the
+            agent changes, so its useState(agent.*) fields re-initialize from
+            props for free — no manual resync effect needed. */}
+        <ConfigTab agent={agent} key={agent.id} />
       </div>
     </div>
   );

@@ -25,6 +25,17 @@ import * as pullRepo from './repository/pull.repo.js';
 export class ReviewRepository {
   constructor(private db: Db) {}
 
+  /**
+   * Run `fn` against a repository bound to ONE DB transaction — for
+   * multi-step writes that must succeed or fail together (see
+   * drizzle-orm-patterns "Transactions"). `tx` has the same query-builder
+   * surface as `Db`; the cast is the standard Drizzle pattern for reusing
+   * repository methods inside a transaction.
+   */
+  withTransaction<T>(fn: (repo: ReviewRepository) => Promise<T>): Promise<T> {
+    return this.db.transaction((tx) => fn(new ReviewRepository(tx as unknown as Db)));
+  }
+
   // ---- PR lookup (workspace-scoped) --------------------------------------
 
   getPull(workspaceId: string, prId: string): Promise<PullRow | undefined> {

@@ -47,7 +47,15 @@ _None yet._
 
 ## What Doesn't Work
 
-_None yet._
+- **2026-08-10** — The 2026-07-31 schema-first decision above claims every
+  route declares a `response` schema alongside `params`/`body` — in practice
+  none do (`grep -c "response:" src/modules/*/routes.ts` → 0 everywhere).
+  Only request validation is enforced today; a handler returning a shape
+  that doesn't match its DTO fails silently at the client instead of at the
+  boundary. Rolling `schema.response` out is real work (every route's actual
+  return shape has to be audited against its shared contract) — deferred as
+  its own follow-up rather than attempted piecemeal alongside unrelated
+  fixes. `src/modules/*/routes.ts`
 
 ## Codebase Patterns
 
