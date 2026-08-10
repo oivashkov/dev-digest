@@ -16,8 +16,10 @@ container so they can be swapped for mocks in tests.
 - **Stack:** Fastify 5 (`@fastify/helmet`, `@fastify/rate-limit`, `@fastify/cors`,
   `fastify-sse-v2` for streaming run traces), Drizzle ORM, `postgres`, pgvector.
   Zod contracts from `src/vendor/shared` (`@devdigest/shared`) double as route
-  schemas via `fastify-type-provider-zod` — one definition drives request
-  validation **and** response serialization.
+  schemas via `fastify-type-provider-zod` for request validation. Response
+  serialization from the same contracts is the intended end state (see
+  `INSIGHTS.md`) but isn't rolled out on any route yet — responses aren't
+  currently schema-checked.
 - **Run:** `pnpm dev` (`:3001`). **Migrate/seed:** `pnpm db:migrate`,
   `pnpm db:seed`. **Test:** `pnpm test` (see [Testing](#testing)).
 - **No keys required to boot:** `loadConfig` (`src/platform/config.ts`) marks
