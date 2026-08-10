@@ -1,40 +1,62 @@
-import { pgTable, uuid, text, integer, jsonb, timestamp, doublePrecision } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  jsonb,
+  timestamp,
+  doublePrecision,
+  index,
+} from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { workspaces } from './core';
 import { agents } from './agents';
 import { pullRequests } from './pulls';
 
 // ============================================================ Observability
 
-export const agentRuns = pgTable('agent_runs', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspaces.id, { onDelete: 'cascade' }),
-  agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
-  prId: uuid('pr_id').references(() => pullRequests.id, { onDelete: 'set null' }),
-  ranAt: timestamp('ran_at', { withTimezone: true }).defaultNow().notNull(),
-  provider: text('provider'),
-  model: text('model'),
-  durationMs: integer('duration_ms'),
-  tokensIn: integer('tokens_in'),
-  tokensOut: integer('tokens_out'),
-  /**
-   * USD billed for this run — OpenRouter's real `usage.cost` when it reports one,
-   * otherwise a PriceBook estimate. Null (never 0) when the model is unpriced or
-   * the run failed before reaching the model.
-   */
-  costUsd: doublePrecision('cost_usd'),
-  status: text('status'),
-  /** Failure reason when status='failed' (LLM/API error, timeout, quota, …). */
-  error: text('error'),
-  source: text('source', { enum: ['local', 'ci'] }).notNull().default('local'),
-  findingsCount: integer('findings_count'),
-  grounding: text('grounding'),
-  /** Review score (0-100) for this run; null on failed/cancelled runs. */
-  score: integer('score'),
-  /** Findings that tripped the agent's gate (severity ≥ ciFailOn). */
-  blockers: integer('blockers'),
-});
+export const agentRuns = pgTable(
+  'agent_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+    prId: uuid('pr_id').references(() => pullRequests.id, { onDelete: 'set null' }),
+    ranAt: timestamp('ran_at', { withTimezone: true }).defaultNow().notNull(),
+    provider: text('provider'),
+    model: text('model'),
+    durationMs: integer('duration_ms'),
+    tokensIn: integer('tokens_in'),
+    tokensOut: integer('tokens_out'),
+    /**
+     * USD billed for this run — OpenRouter's real `usage.cost` when it reports one,
+     * otherwise a PriceBook estimate. Null (never 0) when the model is unpriced or
+     * the run failed before reaching the model.
+     */
+    costUsd: doublePrecision('cost_usd'),
+    status: text('status'),
+    /** Failure reason when status='failed' (LLM/API error, timeout, quota, …). */
+    error: text('error'),
+    source: text('source', { enum: ['local', 'ci'] }).notNull().default('local'),
+    findingsCount: integer('findings_count'),
+    grounding: text('grounding'),
+    /** Review score (0-100) for this run; null on failed/cancelled runs. */
+    score: integer('score'),
+    /** Findings that tripped the agent's gate (severity ≥ ciFailOn). */
+    blockers: integer('blockers'),
+  },
+  (t) => ({
+    // Hit on every PR-list page load (pulls/routes.ts inArray(agentRuns.prId, ...)).
+    prIdx: index('agent_run_pr_idx').on(t.prId),
+    agentIdx: index('agent_run_agent_idx').on(t.agentId),
+    // Partial index: the PR-list cost query filters status='done' specifically.
+    doneIdx: index('agent_run_done_idx')
+      .on(t.prId, t.status)
+      .where(sql`${t.status} = 'done'`),
+  }),
+);
 
 /** Whole trace of one run as a SINGLE jsonb document. */
 export const runTraces = pgTable('run_traces', {
