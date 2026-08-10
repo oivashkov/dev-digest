@@ -1,0 +1,6 @@
+{
+  "$comment": "Config for the pr-self-review skill (.claude/skills/pr-self-review/). See that skill's SKILL.md for what each field does.",
+  "failOn": "critical",
+  "ignorePaths": ["**/vendor/**", "**/*.generated.*", "**/clones/**"],
+  "ignoreSkills": []
+}

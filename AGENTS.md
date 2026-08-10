@@ -20,6 +20,15 @@ isn't already there. **Do not skip this step.**
 Skip only the writing, and only when nothing non-obvious came up — a typo or a
 routine change is not an insight, and noise costs more than silence.
 
+## Before opening a PR
+
+Before running `gh pr create`, or pushing a branch you intend to become a
+PR, run the `pr-self-review` skill. It maps the diff to whichever project
+skills apply (frontend-architecture, backend-onion-architecture, etc.) and
+blocks on any CRITICAL finding. `./scripts/install-hooks.sh` wires the same
+check into a local `pre-push` git hook for enforcement outside a Claude
+Code session — see `.claude/skills/pr-self-review/README.md`.
+
 ## Stack
 
 Node ≥22 · pnpm ≥10 · TypeScript · Fastify 5 · Next.js 15 / React 19 ·
