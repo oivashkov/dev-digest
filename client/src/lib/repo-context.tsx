@@ -43,16 +43,20 @@ export function RepoProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const list = repos ?? [];
-  const fromPath = repoIdFromPath(pathname);
-  const repoId = fromPath ?? stored ?? list[0]?.id ?? null;
-  const activeRepo = list.find((r) => r.id === repoId) ?? null;
+  // Memoized so consumers (most pages, via useActiveRepo/useRepoNotFound)
+  // don't re-render on every RepoProvider render when nothing here actually
+  // changed. `repos` (not a `repos ?? []` fallback) is the dependency so an
+  // empty-array fallback created fresh each render doesn't defeat the memo
+  // while repos is still loading.
+  const value = React.useMemo(() => {
+    const list = repos ?? [];
+    const fromPath = repoIdFromPath(pathname);
+    const repoId = fromPath ?? stored ?? list[0]?.id ?? null;
+    const activeRepo = list.find((r) => r.id === repoId) ?? null;
+    return { repoId, setRepoId, repos: list, activeRepo, reposLoaded };
+  }, [repos, pathname, stored, setRepoId, reposLoaded]);
 
-  return (
-    <RepoCtx.Provider value={{ repoId, setRepoId, repos: list, activeRepo, reposLoaded }}>
-      {children}
-    </RepoCtx.Provider>
-  );
+  return <RepoCtx.Provider value={value}>{children}</RepoCtx.Provider>;
 }
 
 export function useActiveRepo() {

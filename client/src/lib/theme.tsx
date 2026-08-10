@@ -33,7 +33,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     set(theme === "dark" ? "light" : "dark");
   }, [theme, set]);
 
-  return <ThemeCtx.Provider value={{ theme, toggle, set }}>{children}</ThemeCtx.Provider>;
+  // Memoized so context consumers don't re-render on every ThemeProvider
+  // render — toggle/set are already stable (useCallback), theme is the only
+  // real dependency.
+  const value = React.useMemo(() => ({ theme, toggle, set }), [theme, toggle, set]);
+
+  return <ThemeCtx.Provider value={value}>{children}</ThemeCtx.Provider>;
 }
 
 export function useTheme() {
