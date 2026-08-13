@@ -212,7 +212,7 @@ export const ConventionCandidate = z.object({
   // "12-31" (range) or "12" (single line) — one string, mirrors the
   // `path:LINE-LINE` citation shown next to the code snippet in the UI.
   evidence_line_range: z.string(),
-  evidence_snippet: z.string(),
+  snippet: z.string(),
   confidence: z.number().min(0).max(1),
   accepted: z.boolean(),
 });

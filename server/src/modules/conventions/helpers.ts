@@ -9,7 +9,7 @@ export function toConventionCandidateDto(row: ConventionRow): ConventionCandidat
     rule: row.rule,
     evidence_path: row.evidencePath ?? '',
     evidence_line_range: row.evidenceLineRange ?? '',
-    evidence_snippet: row.evidenceSnippet ?? '',
+    snippet: row.evidenceSnippet ?? '',
     confidence: row.confidence ?? 0,
     accepted: row.accepted,
   };
