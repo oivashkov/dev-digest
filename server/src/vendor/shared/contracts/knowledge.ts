@@ -193,15 +193,56 @@ export const SkillVersion = z.object({
 export type SkillVersion = z.infer<typeof SkillVersion>;
 
 // ---- Conventions ----
+export const ConventionCategory = z.enum([
+  'naming',
+  'structure',
+  'error_handling',
+  'imports',
+  'formatting',
+  'testing',
+  'other',
+]);
+export type ConventionCategory = z.infer<typeof ConventionCategory>;
+
 export const ConventionCandidate = z.object({
   id: z.string(),
+  category: ConventionCategory,
   rule: z.string(),
   evidence_path: z.string(),
+  // "12-31" (range) or "12" (single line) — one string, mirrors the
+  // `path:LINE-LINE` citation shown next to the code snippet in the UI.
+  evidence_line_range: z.string(),
   evidence_snippet: z.string(),
   confidence: z.number().min(0).max(1),
   accepted: z.boolean(),
 });
 export type ConventionCandidate = z.infer<typeof ConventionCandidate>;
+
+// GET /repos/:id/conventions
+export const ConventionsState = z.object({
+  candidates: z.array(ConventionCandidate),
+  // Files actually sent to the extraction LLM call (not the full ranked set).
+  sample_file_count: z.number().int(),
+  last_scan_at: z.string().nullable(),
+  scan_status: z.enum(['idle', 'scanning', 'failed']),
+});
+export type ConventionsState = z.infer<typeof ConventionsState>;
+
+// POST /repos/:id/conventions/extract → 202
+export const ConventionsExtractAccepted = z.object({
+  status: z.literal('accepted'),
+  job_id: z.string().nullish(),
+  degraded: z.boolean().optional(),
+});
+export type ConventionsExtractAccepted = z.infer<typeof ConventionsExtractAccepted>;
+
+// PATCH /conventions/:id — accept/reject and/or inline-edit in one call.
+export const UpdateConventionCandidate = z.object({
+  rule: z.string().min(1).optional(),
+  evidence_snippet: z.string().min(1).optional(),
+  accepted: z.boolean().optional(),
+});
+export type UpdateConventionCandidate = z.infer<typeof UpdateConventionCandidate>;
 
 // ---- Agents ----
 // 'openrouter' routes through the OpenAI-compatible API (OpenAIProvider with a
