@@ -30,8 +30,11 @@ npm run typecheck  # tsc --noEmit — this IS the build; the package emits no JS
 - The score is **recomputed deterministically** from the surviving findings. The
   model's own score is never trusted.
 - `assemblePrompt` accepts optional slots (`skills`, `memory`, `specs`,
-  `callers`) that the starter does not fill. Omitted slots render as no section —
-  an empty section in the prompt means a caller passed an empty value.
+  `callers`). The server fills `skills` (an agent's linked, enabled skills, in
+  order — see `server/src/modules/reviews/run-executor.ts`) and `callers`
+  /`repoMap`; `memory`/`specs` are still unfed. Omitted slots render as no
+  section — an empty section in the prompt means a caller passed an empty
+  value.
 
 ## Read when
 

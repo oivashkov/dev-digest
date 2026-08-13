@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FindingCategory } from './findings.js';
 
 /**
  * Conformance, Onboarding, Eval, Memory, Conventions, Skills,
@@ -139,6 +140,57 @@ export const CommunitySkill = z.object({
   desc: z.string(),
 });
 export type CommunitySkill = z.infer<typeof CommunitySkill>;
+
+// A skill's usage numbers, always DERIVED (never stored) — see
+// `SkillsService.getStats`/`list` for how each field is computed and the
+// approximation it relies on (findings aren't attributed to a specific
+// skill; a finding "counts" toward a skill when its category matches that
+// skill type's mapped categories AND it came from a review by an agent this
+// skill is attached to).
+export const SkillStatsAgentUsage = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+export type SkillStatsAgentUsage = z.infer<typeof SkillStatsAgentUsage>;
+
+export const SkillFindingsByCategory = z.object({
+  category: FindingCategory,
+  count: z.number().int(),
+});
+export type SkillFindingsByCategory = z.infer<typeof SkillFindingsByCategory>;
+
+export const SkillStats = z.object({
+  used_by: z.number().int(),
+  agents: z.array(SkillStatsAgentUsage),
+  // null when no agent using this skill has any review yet — "no data", not "0%".
+  pull_frequency_pct: z.number().min(0).max(100).nullable(),
+  accept_rate_pct: z.number().min(0).max(100).nullable(),
+  findings_30d: z.number().int(),
+  findings_by_category: z.array(SkillFindingsByCategory),
+});
+export type SkillStats = z.infer<typeof SkillStats>;
+
+// Skill + the three summary numbers from SkillStats, embedded on every row of
+// `GET /skills` so a list/sidebar card can show "N agents · X% pull · Y%
+// accept" without an N+1 round-trip from the client. `GET /skills/:id`
+// returns the plain `Skill` — the summary is a list-view concern.
+export const SkillSummary = Skill.extend({
+  used_by: z.number().int(),
+  pull_frequency_pct: z.number().min(0).max(100).nullable(),
+  accept_rate_pct: z.number().min(0).max(100).nullable(),
+});
+export type SkillSummary = z.infer<typeof SkillSummary>;
+
+// One immutable body snapshot, taken on every content-changing save (see
+// `skill_versions` / `SkillsRepository.snapshotVersion`).
+export const SkillVersion = z.object({
+  skill_id: z.string(),
+  version: z.number().int(),
+  body: z.string(),
+  summary: z.string().nullable(),
+  created_at: z.string(),
+});
+export type SkillVersion = z.infer<typeof SkillVersion>;
 
 // ---- Conventions ----
 export const ConventionCandidate = z.object({

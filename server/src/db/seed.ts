@@ -1,4 +1,7 @@
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createDb, type Db } from './client.js';
 import * as t from './schema.js';
 import { eq, and } from 'drizzle-orm';
@@ -6,11 +9,16 @@ import {
   GENERAL_REVIEWER_PROMPT,
   SECURITY_REVIEWER_PROMPT,
   PERFORMANCE_REVIEWER_PROMPT,
+  TEST_QUALITY_REVIEWER_PROMPT,
+  API_CONTRACT_REVIEWER_PROMPT,
 } from './seed-prompts.js';
+import { extractSkillCore } from '../modules/skills/helpers.js';
 
 /** Default provider/model for the built-in reviewer agents. */
 const DEFAULT_PROVIDER = 'openrouter' as const;
 const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash';
+
+const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
 /**
  * Seed the starter's demo data. Idempotent: re-running upserts the default
@@ -18,11 +26,15 @@ const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash';
  *
  * Seeds: default workspace + system user + membership, default settings,
  * demo repo (acme/payments-api), PR #482 with files/commits, a sample review
- * with a few findings, and the three built-in agents (General + Security +
- * Performance), all on the default openrouter/deepseek-v4-flash provider+model.
+ * with a few findings, five built-in agents (General + Security + Performance
+ * + Test Quality + API Contract), all on the default openrouter/deepseek-v4
+ * -flash provider+model, and a handful of skills linked to the two newest
+ * agents — one of them (`pr-quality-rubric`) seeded through the actual
+ * import/extract path (`extractSkillCore`) against a fixture file, not
+ * hand-written, so the seed itself exercises the import code path.
  *
- * Course lessons populate the other tables (skills, conventions, memory, eval,
- * …) once their features are built — they start empty here.
+ * Course lessons populate the remaining tables (conventions, memory, eval, …)
+ * once their features are built — they start empty here.
  */
 
 export const DEFAULT_WORKSPACE_NAME = 'default';
@@ -211,6 +223,28 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       version: 1,
       createdBy: userId,
     },
+    {
+      workspaceId,
+      name: 'Test Quality Reviewer',
+      description: 'Flags untested branches, missed edge cases, over-mocking, and flaky patterns.',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+      systemPrompt: TEST_QUALITY_REVIEWER_PROMPT,
+      enabled: true,
+      version: 1,
+      createdBy: userId,
+    },
+    {
+      workspaceId,
+      name: 'API Contract Reviewer',
+      description: 'Catches breaking changes to route request/response shapes before they ship.',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+      systemPrompt: API_CONTRACT_REVIEWER_PROMPT,
+      enabled: true,
+      version: 1,
+      createdBy: userId,
+    },
   ];
   for (const a of seedAgents) {
     const [existing] = await db
@@ -218,6 +252,118 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       .from(t.agents)
       .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, a.name)));
     if (!existing) await db.insert(t.agents).values(a);
+  }
+
+  // ---- skills (linked to the two newest agents) ----
+  // Three hand-written + one seeded through the real import/extract path
+  // (extractSkillCore against a fixture file), so "at least one skill goes
+  // through import" is actually exercised, not just labeled.
+  const prQualityRubric = extractSkillCore(
+    'pr-quality-rubric.md',
+    readFileSync(join(FIXTURES_DIR, 'pr-quality-rubric.md')),
+  );
+
+  const seedSkills: Array<typeof t.skills.$inferInsert> = [
+    {
+      workspaceId,
+      name: 'Test coverage nudge',
+      description: 'Flag a PR that changes behavior with no accompanying test.',
+      type: 'custom',
+      source: 'manual',
+      body:
+        'If this diff changes observable behavior (a new branch, a changed return value, ' +
+        'a new error path) and the diff contains no corresponding test change, say so ' +
+        'explicitly as its own finding — do not let it slide because "the rest of the PR ' +
+        'looks fine." Name the exact behavior that has no test.',
+      enabled: true,
+      version: 1,
+    },
+    {
+      workspaceId,
+      name: 'No over-mocking',
+      description: 'Flag tests whose mocks make the assertion unable to fail.',
+      type: 'convention',
+      source: 'manual',
+      body:
+        'A test that mocks the exact function/module it claims to test, or whose mock ' +
+        'reimplements the real logic well enough that the test can never observe a real ' +
+        'regression, is not proving anything. Flag it and name what real behavior the mock ' +
+        'is hiding.',
+      enabled: true,
+      version: 1,
+    },
+    {
+      workspaceId,
+      name: 'API breaking-change gate',
+      description: 'Block a PR that removes/retypes a response field or narrows a request field.',
+      type: 'rubric',
+      source: 'manual',
+      body:
+        'Before approving any route change, restate the OLD request/response shape and the ' +
+        'NEW one side by side. If a response field was removed or retyped, or a request ' +
+        'field went from optional to required with no default, that is CRITICAL regardless ' +
+        'of what the PR description claims about compatibility.',
+      enabled: true,
+      version: 1,
+    },
+    {
+      workspaceId,
+      name: prQualityRubric.name,
+      description: 'General PR quality baseline — applied alongside whatever else this agent checks.',
+      // extractSkillCore always defaults `type` to 'custom' (it can't infer a
+      // semantic category from content) — this override is exactly what a
+      // human confirming the ImportSkillDialog preview would do before saving.
+      type: 'rubric',
+      source: prQualityRubric.source,
+      body: prQualityRubric.body,
+      enabled: true,
+      version: 1,
+      evidenceFiles: prQualityRubric.evidence_files,
+    },
+  ];
+  const skillIdByName = new Map<string, string>();
+  for (const sk of seedSkills) {
+    const [existing] = await db
+      .select()
+      .from(t.skills)
+      .where(and(eq(t.skills.workspaceId, workspaceId), eq(t.skills.name, sk.name)));
+    const row = existing ?? (await db.insert(t.skills).values(sk).returning())[0];
+    skillIdByName.set(sk.name, row!.id);
+    // Seeded skills are inserted directly (not through SkillsRepository), so
+    // snapshot v1 here too — otherwise the Versions tab shows "no history"
+    // for every demo skill, which is misleading (a real create always does).
+    if (!existing) {
+      await db
+        .insert(t.skillVersions)
+        .values({ skillId: row!.id, version: 1, body: row!.body, summary: 'Initial version' })
+        .onConflictDoNothing();
+    }
+  }
+
+  const agentIdByName = new Map<string, string>();
+  for (const name of ['Test Quality Reviewer', 'API Contract Reviewer']) {
+    const [row] = await db
+      .select()
+      .from(t.agents)
+      .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, name)));
+    if (row) agentIdByName.set(name, row.id);
+  }
+
+  const seedLinks: Array<{ agent: string; skill: string; order: number }> = [
+    { agent: 'Test Quality Reviewer', skill: 'Test coverage nudge', order: 0 },
+    { agent: 'Test Quality Reviewer', skill: 'No over-mocking', order: 1 },
+    { agent: 'Test Quality Reviewer', skill: prQualityRubric.name, order: 2 },
+    { agent: 'API Contract Reviewer', skill: 'API breaking-change gate', order: 0 },
+    { agent: 'API Contract Reviewer', skill: prQualityRubric.name, order: 1 },
+  ];
+  for (const link of seedLinks) {
+    const agentId = agentIdByName.get(link.agent);
+    const skillId = skillIdByName.get(link.skill);
+    if (!agentId || !skillId) continue;
+    await db
+      .insert(t.agentSkills)
+      .values({ agentId, skillId, order: link.order })
+      .onConflictDoNothing();
   }
 
   return { workspaceId, userId };

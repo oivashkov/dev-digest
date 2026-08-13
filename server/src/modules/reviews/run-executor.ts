@@ -181,6 +181,18 @@ export class ReviewRunExecutor {
       const repoMap = repoIntelOn ? await this.buildRepoMapDigest(pull.repoId, runLog) : undefined;
       const rankNote = repoIntelOn ? await this.buildRankNote(pull.repoId, diff, runLog) : '';
 
+      // Skills — this agent's linked skills, ENABLED only, in their configured
+      // order. Bodies are plain markdown text (never executed); each becomes
+      // one block in the `## Skills / rules` prompt section. A disabled skill
+      // is filtered out here, so it never reaches the prompt or the trace.
+      const skillLinks = await this.agents.linkedSkills(agent.id);
+      const skillBodies = skillLinks
+        .filter((l) => l.skill.enabled)
+        .map((l) => `### ${l.skill.name}\n${l.skill.body}`);
+      if (skillBodies.length > 0) {
+        runLog.info(`Attaching ${skillBodies.length} skill(s) to the prompt`);
+      }
+
       const task = taskLine(pull) + rankNote;
 
       // ---- Engine: assemble → single-pass → grounding -----------------------
@@ -200,6 +212,8 @@ export class ReviewRunExecutor {
         ...(callersDigest ? { callers: callersDigest } : {}),
         // T3 — repo skeleton, same omit-when-empty contract.
         ...(repoMap ? { repoMap } : {}),
+        // Skills — enabled, ordered skill bodies. Same omit-when-empty contract.
+        ...(skillBodies.length > 0 ? { skills: skillBodies } : {}),
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),

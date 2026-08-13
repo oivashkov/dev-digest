@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../../db/client.js';
 import * as t from '../../db/schema.js';
 import type { CiFailOn, Provider, ReviewStrategy } from '@devdigest/shared';
@@ -225,12 +225,29 @@ export class AgentsRepository {
    * Replace the full set of linked skills for an agent with `skillIds`, assigning
    * order = index. Used by the "Skills" editor tab (attach/reorder). Skills not in
    * the list are unlinked.
+   *
+   * Delete + insert run in one transaction, AND the insert upserts on the
+   * `agent_skills` (agent_id, skill_id) PK. The transaction alone is not
+   * enough: when an agent has no EXISTING links yet, the delete is a no-op
+   * for two overlapping calls (nothing to lock), so both transactions still
+   * race straight into the insert and the second one's plain INSERT would
+   * hit the PK as a raw 500 — reproduced by firing two `setSkills` calls for
+   * a fresh agent concurrently. `onConflictDoUpdate` makes the losing side
+   * of that race an UPDATE instead of a crash. `skillIds` is also
+   * deduplicated defensively so a caller-side duplicate can't do the same.
    */
   async setSkills(agentId: string, skillIds: string[]): Promise<void> {
-    await this.db.delete(t.agentSkills).where(eq(t.agentSkills.agentId, agentId));
-    if (skillIds.length === 0) return;
-    await this.db
-      .insert(t.agentSkills)
-      .values(skillIds.map((skillId, i) => ({ agentId, skillId, order: i })));
+    const uniqueIds = [...new Set(skillIds)];
+    await this.db.transaction(async (tx) => {
+      await tx.delete(t.agentSkills).where(eq(t.agentSkills.agentId, agentId));
+      if (uniqueIds.length === 0) return;
+      await tx
+        .insert(t.agentSkills)
+        .values(uniqueIds.map((skillId, i) => ({ agentId, skillId, order: i })))
+        .onConflictDoUpdate({
+          target: [t.agentSkills.agentId, t.agentSkills.skillId],
+          set: { order: sql`excluded."order"` },
+        });
+    });
   }
 }

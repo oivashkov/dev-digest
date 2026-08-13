@@ -1,7 +1,16 @@
 import React from "react";
 import { Icon } from "../icons";
 
-/** REAL controlled checkbox (styled). */
+/** REAL controlled checkbox (styled). Deliberately NOT a `<label>` wrapping
+ *  the `<button>`: a `<button>` is a labelable element, and clicking it
+ *  directly while nested in a `<label>` can dispatch TWO click events in
+ *  some browsers — one from the direct click, one from the label's native
+ *  click-forwarding to its labelable descendant. That fired `onChange`
+ *  twice per click here, sending two rapid, different-payload requests
+ *  wherever this drove a mutation (e.g. the Skills tab's attach checkboxes).
+ *  The `<button>` stays the only focusable/keyboard-operable element; the
+ *  wrapping `<div>`'s `onClick` is the single handler both a direct click
+ *  and a bubbled keyboard activation reach exactly once. */
 export function Checkbox({
   checked,
   onChange,
@@ -12,7 +21,8 @@ export function Checkbox({
   label?: React.ReactNode;
 }) {
   return (
-    <label
+    <div
+      onClick={() => onChange?.(!checked)}
       style={{
         display: "flex",
         alignItems: "center",
@@ -26,7 +36,6 @@ export function Checkbox({
         type="button"
         role="checkbox"
         aria-checked={checked}
-        onClick={() => onChange?.(!checked)}
         style={{
           width: 16,
           height: 16,
@@ -41,6 +50,6 @@ export function Checkbox({
         {checked && <Icon.Check size={11} style={{ color: "#fff" }} />}
       </button>
       {label}
-    </label>
+    </div>
   );
 }

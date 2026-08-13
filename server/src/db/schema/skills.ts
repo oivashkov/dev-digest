@@ -28,6 +28,12 @@ export const skillVersions = pgTable(
       .references(() => skills.id, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
     body: text('body').notNull(),
+    // Short human-readable changelog line for this snapshot (e.g. "Updated
+    // body, type" or "Restored to v3"), auto-generated from which fields
+    // changed — see `summarizeSkillChange` in modules/skills/helpers.ts.
+    // Nullable so pre-existing rows (seeded before this column existed)
+    // degrade to a generic label client-side instead of a migration backfill.
+    summary: text('summary'),
     createdAt: now(),
   },
   (t) => ({ pk: primaryKey({ columns: [t.skillId, t.version] }) }),

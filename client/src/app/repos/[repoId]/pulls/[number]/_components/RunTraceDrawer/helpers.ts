@@ -26,3 +26,11 @@ export function formatSeconds(ms: number): string {
 export function formatTokens(tokensIn: number, tokensOut: number): string {
   return `${(tokensIn / 1000).toFixed(0)}k→${(tokensOut / 1000).toFixed(1)}k`;
 }
+
+/** Rough token estimate for a prompt block — same chars/4 heuristic the
+ *  server's tokenizer adapter falls back to (server/src/adapters/tokenizer).
+ *  Display-only: the real count is provider-tokenizer-specific and already
+ *  shown in aggregate by trace.stats.tokens_in. */
+export function approxTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
