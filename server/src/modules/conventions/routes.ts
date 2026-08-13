@@ -34,7 +34,7 @@ export default async function conventionsRoutes(appBase: FastifyInstance) {
     async (req, reply): Promise<ConventionsExtractAccepted> => {
       const { workspaceId } = await getContext(container, req);
       const { jobId, degraded } = await service.triggerExtraction(workspaceId, req.params.id);
-      reply.code(202);
+      reply.code(200);
       return degraded
         ? { status: 'accepted', degraded: true }
         : { status: 'accepted', job_id: jobId };
