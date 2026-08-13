@@ -221,8 +221,6 @@ export type ConventionCandidate = z.infer<typeof ConventionCandidate>;
 // GET /repos/:id/conventions
 export const ConventionsState = z.object({
   candidates: z.array(ConventionCandidate),
-  // Files actually sent to the extraction LLM call (not the full ranked set).
-  sample_file_count: z.number().int(),
   last_scan_at: z.string().nullable(),
   scan_status: z.enum(['idle', 'scanning', 'failed']),
 });
