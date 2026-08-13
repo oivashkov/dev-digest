@@ -8,7 +8,7 @@ export function toConventionCandidateDto(row: ConventionRow): ConventionCandidat
     category: row.category as ConventionCategory,
     rule: row.rule,
     evidence_path: row.evidencePath ?? '',
-    evidence_line_range: row.evidenceLineRange ?? '',
+    evidence_line_range: row.evidenceLineRange,
     snippet: row.evidenceSnippet ?? '',
     confidence: row.confidence ?? 0,
     accepted: row.accepted,
