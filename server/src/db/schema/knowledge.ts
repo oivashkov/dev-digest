@@ -34,9 +34,16 @@ export const conventions = pgTable('conventions', {
     .notNull()
     .references(() => workspaces.id, { onDelete: 'cascade' }),
   repoId: uuid('repo_id').references(() => repos.id, { onDelete: 'cascade' }),
+  category: text('category', {
+    enum: ['naming', 'structure', 'error_handling', 'imports', 'formatting', 'testing', 'other'],
+  })
+    .notNull()
+    .default('other'),
   rule: text('rule').notNull(),
   evidencePath: text('evidence_path'),
+  evidenceLineRange: text('evidence_line_range'),
   evidenceSnippet: text('evidence_snippet'),
   confidence: doublePrecision('confidence'),
   accepted: boolean('accepted').notNull().default(false),
+  createdAt: now(),
 });

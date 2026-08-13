@@ -28,10 +28,13 @@ export function defaultFeatureModel(id: FeatureModelId): FeatureModelChoice {
 }
 
 /**
- * The workspace's override for `id`, or `undefined` when unset/invalid. Callers
- * that keep their own dynamic default (e.g. conventions) use this directly so
- * that default is preserved; callers with a static default use
- * `resolveFeatureModel` instead.
+ * The workspace's override for `id`, or `undefined` when unset/invalid. Used
+ * internally by `resolveFeatureModel` below — every current feature
+ * (including `conventions`, whose default is a deliberately cheap model, see
+ * `server/INSIGHTS.md` 2026-08-13) resolves through the registry's static
+ * default rather than a bespoke per-feature default, so call
+ * `resolveFeatureModel`, not this, unless a future feature genuinely needs
+ * a runtime-computed default the registry can't express.
  */
 export async function getFeatureModelOverride(
   container: Container,

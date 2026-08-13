@@ -132,6 +132,18 @@ _None yet._
 
 ## Tool & Library Notes
 
+- **2026-08-13** — Running `pnpm build` (production) in `client/` while a
+  `next dev` server is already live on the same machine corrupts the running
+  dev process — both write to the same `.next/` directory, and the dev
+  server keeps stale in-memory module resolution after the build overwrites
+  its artifacts on disk. Symptom: every route 500s with `Cannot find module
+  './vendor-chunks/<pkg>.js'` even for routes untouched by the current
+  change. Deleting `.next/` alone does NOT fix a live dev server — it must
+  be killed and restarted (`pnpm dev` again) to pick up a clean build graph.
+  When both a build and a live dev server are needed in the same session,
+  restart the dev server immediately after any `pnpm build` in that package,
+  or run the build against a separate checkout/worktree.
+
 - **2026-08-12** — `vendor/ui/kit/Checkbox.tsx` wrapped its `<button
   role="checkbox">` in a `<label>` (purely for the click-anywhere-toggles
   UX, no real `<input>` involved). A `<button>` is a labelable HTML

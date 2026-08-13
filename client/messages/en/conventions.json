@@ -15,12 +15,49 @@
       "body": "Scan the repo to surface house-rules — naming, error handling, structure — each backed by evidence you can turn into a Skill.",
       "cta": "Run extraction"
     },
-    "candidateCount": "{count, plural, one {# candidate} other {# candidates}} · grounded against sampled files"
+    "candidateCount": "{count, plural, one {# candidate} other {# candidates}} · grounded against sampled files",
+    "detectedFrom": "Detected from {count, plural, one {# sample file} other {# sample files}} · last scan {time}",
+    "neverScanned": "Not scanned yet"
   },
   "card": {
     "confidence": "Confidence",
     "accepted": "Accepted",
     "accepting": "Accepting…",
-    "acceptAsSkill": "Accept as Skill"
+    "acceptAsSkill": "Accept as Skill",
+    "reject": "Reject",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "evidenceLabel": "Detected in",
+    "categoryLabel": {
+      "naming": "Naming",
+      "structure": "Structure",
+      "error_handling": "Error handling",
+      "imports": "Imports",
+      "formatting": "Formatting",
+      "testing": "Testing",
+      "other": "Other"
+    }
+  },
+  "list": {
+    "acceptedCount": "{accepted} of {total} accepted",
+    "deselectAll": "Deselect all",
+    "createSkill": "Create skill"
+  },
+  "modal": {
+    "title": "Create skill from conventions",
+    "banner": "Merged from {count, plural, one {# accepted convention} other {# accepted conventions}} in {repo}. Everything below is editable before you save.",
+    "fields": {
+      "name": "Name",
+      "description": "Description",
+      "type": "Type",
+      "enabled": "Enabled",
+      "enabledHint": "Whether this block is added to agents' prompts.",
+      "body": "Skill body"
+    },
+    "tokenCount": "{count} tokens",
+    "cancel": "Cancel",
+    "create": "Create skill",
+    "creating": "Creating…"
   }
 }

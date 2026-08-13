@@ -60,6 +60,49 @@ but a much larger, riskier change touching the LLM output schema and every
 review call site). `src/modules/skills/helpers.ts`
 (`SKILL_TYPE_FINDING_CATEGORIES`, `computeSkillStats`).
 
+### 2026-08-13 — Conventions extraction defaults to a cheap model via the normal `FEATURE_MODELS` registry, not a bespoke override
+
+**What:** the `conventions` `FEATURE_MODELS` entry's default was changed from
+`openai/gpt-5.4` to `openrouter/deepseek-v4-flash`, and `ConventionsService`
+resolves its model the standard way — `resolveFeatureModel(container,
+workspaceId, 'conventions')` — same as every other feature model.
+**Why:** extraction runs over dozens of sampled files and every result is
+reviewed/edited by the user before being kept, so a strong (expensive) model
+isn't worth it by default; a cheap default still leaves the door open to a
+per-workspace override via Settings → Models.
+**Rejected:** `settings/feature-models.ts`'s doc comment says conventions
+should "keep its own dynamic default" and call `getFeatureModelOverride`
+directly instead of `resolveFeatureModel`, implying a bespoke
+runtime-computed default distinct from the registry's static one. That would
+leave the Settings UI showing a default (`gpt-5.4`) that doesn't match what
+actually runs — just changing the registry's static default is the smaller,
+more honest fix, and nothing else in the codebase has a "dynamic default"
+mechanism to justify inventing one here. `src/vendor/shared/contracts
+/platform.ts` (`FEATURE_MODELS`), `src/modules/settings/feature-models.ts:30-34`
+(comment is now stale — describes an approach that wasn't taken).
+
+### 2026-08-13 — Conventions candidate lifecycle: one `PATCH`, re-scan replaces only the unreviewed
+
+**What:** `PATCH /conventions/:id` takes `{rule?, evidence_snippet?,
+accepted?}` — accept, reject, and inline-edit all go through this one
+endpoint, not dedicated action verbs. Re-extraction (`POST
+/repos/:id/conventions/extract`) deletes only candidates with `accepted =
+false` before inserting the fresh batch; accepted rows are never touched by
+a re-scan.
+**Why:** one candidate card exposes 3 independently-settable actions from
+the same place — a single flexible partial-update avoids three near-duplicate
+endpoints for it. Re-scan-replaces-non-accepted protects an in-progress
+"create skill from accepted candidates" selection from being silently wiped
+by a background re-scan, while still avoiding duplicate/stale candidates
+piling up across repeated scans.
+**Rejected:** matching `findings`' `/accept` + `/dismiss` action-verb pair
+(three endpoints instead of one, for one card); matching `skills`' full
+`PUT` replace (would force the client to resend the whole candidate on every
+accept click); a purely additive re-scan that never deletes anything (no
+dedup logic exists in v1, so repeated scans would accumulate near-duplicate
+candidates indefinitely). `src/modules/conventions/{routes,service
+,repository}.ts`.
+
 ## What Works
 
 _None yet._
