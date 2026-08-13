@@ -75,6 +75,22 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-12** — A feature can be scaffolded consistently across the DB
+  schema, the Zod contract, AND a pure-engine prompt slot with **zero lines
+  connecting them at runtime** — no module, no route, no UI, no caller ever
+  populating the value. Before this session, the Skills feature had
+  `skills`/`skill_versions`/`agent_skills` tables, `Skill`/`AgentSkillLink`
+  contracts, fully-working agent-side linking routes
+  (`GET/POST /agents/:id/skills`), AND `reviewer-core`'s `assemblePrompt`
+  already rendering a `## Skills / rules` section from a `skills?: string[]`
+  slot it had accepted from the start — but `server/src/modules/reviews
+  /run-executor.ts`'s call to `reviewPullRequest({...})` never passed
+  `skills`, so the section had never rendered in a real run. Grepping for the
+  DB table or the contract type is not evidence a feature works; grep the
+  actual call site that would need to thread the data through (here, one
+  missing spread expression) before estimating how much work remains.
+  `server/src/modules/reviews/run-executor.ts`,
+  `reviewer-core/src/prompt.ts:85` (`assemblePrompt`).
 - **2026-08-04** — `server/src/vendor/shared` and `client/src/vendor/shared`
   are two independent copies of `@devdigest/shared`, not a symlink or a build
   step — editing one does NOT update the other, and nothing fails loudly when

@@ -1,1 +1,1 @@
-export const VALID_TABS = ["config"];
+export const VALID_TABS = ["config", "skills"];

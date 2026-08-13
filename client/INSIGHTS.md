@@ -51,10 +51,47 @@ _None yet._
 
 ## What Doesn't Work
 
-_None yet._
+- **2026-08-12** — A batched "toggle several checkboxes, then click Save" UI
+  reads as broken in this codebase even when its persistence logic is
+  correct. Every OTHER toggle here (`AgentCard`/`ConfigTab`'s enabled switch,
+  `SkillCard`/`SkillEditorPageView`'s enabled switch) auto-saves immediately
+  on click. The Agent Editor's Skills tab was first built with a checkbox
+  list + a separate "Save skills" button batching all attach/detach/reorder
+  edits; a user unchecked a skill, didn't click Save (nothing else in the app
+  requires it), navigated away, and the change was silently lost — reported
+  as "I can enable a skill but can't disable it," even though a real API
+  round-trip and an isolated RTL test both proved the batch-then-save flow
+  worked correctly in both directions. Fixed by calling
+  `useSetAgentSkills().mutate(...)` immediately from inside each
+  checkbox/move-button's state updater (using the updater's fresh
+  next-value, not the outer render's `order`/`checked`) and removing the
+  Save button entirely. Any new toggle-shaped control in this app should
+  auto-save; don't introduce a second, batched interaction model.
+  `client/src/app/agents/[id]/_components/AgentEditor/_components/SkillsTab
+  /SkillsTab.tsx`.
 
 ## Codebase Patterns
 
+- **2026-08-12** — This app's dark/light theming is `[data-theme="dark"
+  |"light"]` on `<html>` only (`vendor/ui/styles.css:9-10`: `:root,
+  [data-theme="dark"]` is the default block, `[data-theme="light"]`
+  overrides) — there is no `@media (prefers-color-scheme)` anywhere in this
+  app, unlike Artifacts' dual-declaration convention. A new
+  feature-specific color token (e.g. the Skill Stats tab's category-donut
+  palette — not a `@devdigest/ui` design-system token) belongs in
+  `client/src/app/globals.css`, NOT `vendor/ui/styles.css` (vendored,
+  off-limits), declared under those same two selectors.
+  `client/src/app/globals.css`, `client/src/vendor/ui/styles.css:9`.
+- **2026-08-12** — `messages/en/<namespace>.json` can hold copy for a tab/UI
+  that isn't wired up yet — it's a spec, not dead weight. `AgentEditor`'s
+  `TABS` constant only listed `config`, but `messages/en/agents.json` already
+  had a full `skills.*` section (`title`, `enabledCount`, `filterPlaceholder`,
+  `orderHint`) that no component read, describing the filter box, the "N of M
+  enabled" counter, and the order-matters hint for the not-yet-built Skills
+  tab. Before writing new copy for a feature whose i18n namespace already
+  exists, check `messages/en/<ns>.json` for keys nothing renders yet.
+  `client/src/app/agents/[id]/_components/AgentEditor/constants.ts`,
+  `client/messages/en/agents.json`.
 - **2026-08-10** — `@devdigest/ui`'s barrel (`vendor/ui/index.ts`)
   unconditionally re-exports `./charts` (Recharts-based `LineChart` etc.),
   which is not safe to evaluate in the RSC/server bundle — importing
@@ -95,7 +132,29 @@ _None yet._
 
 ## Tool & Library Notes
 
-_None yet._
+- **2026-08-12** — `vendor/ui/kit/Checkbox.tsx` wrapped its `<button
+  role="checkbox">` in a `<label>` (purely for the click-anywhere-toggles
+  UX, no real `<input>` involved). A `<button>` is a labelable HTML
+  element, and clicking it directly while nested inside a `<label>` can
+  dispatch the click TWICE in real browsers — once from the direct click,
+  once from the label's native forward-to-labelable-descendant behavior —
+  even though it fires exactly once under `@testing-library/react`'s
+  `fireEvent.click()` (jsdom doesn't reproduce this native quirk). Symptom:
+  two `POST` requests ~7ms apart for the same user action, the first
+  carrying the PRE-toggle state and the second the correct post-toggle
+  state — confirmed via a HAR export's request timestamps, not something a
+  passing RTL test could have caught. `SkillsTab`'s attach checkboxes hit
+  this (every click briefly round-tripped the wrong-then-right payload).
+  Fixed by moving the `onClick` off the `<button>` onto a plain wrapping
+  `<div>` and dropping the `<label>` entirely — the button stays the sole
+  focusable/keyboard-operable element, its native click (mouse or
+  keyboard-Enter/Space) still bubbles to the div's single handler, and there
+  is no more native label-forwarding path to double-fire from.
+  `client/src/vendor/ui/kit/Checkbox.tsx`. **Verification gap, same shape as
+  the 2026-08-10 `not-found.tsx` entry below: a clean typecheck + a full
+  green RTL suite is not evidence a click handler fires once in a real
+  browser — when a report doesn't reproduce through your own tests, ask for
+  (or capture) a HAR/network trace before concluding the report is wrong.**
 
 ## Recurring Errors & Fixes
 

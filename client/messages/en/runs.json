@@ -56,7 +56,9 @@
       "copy": "Copy",
       "fullscreen": "Open fullscreen",
       "search": "Search in this block…",
-      "noMatches": "No matches for “{q}”."
+      "noMatches": "No matches for “{q}”.",
+      "tokens": "~{count} tok",
+      "tokensHint": "Approximate tokens added by this block (chars ÷ 4 — the same fallback heuristic the server's tokenizer uses)."
     },
     "tools": {
       "args": "args",

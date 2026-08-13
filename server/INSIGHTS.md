@@ -41,6 +41,25 @@ serialization, or the two drift.
 validated input only, left responses unchecked, and duplicated the schema
 reference in every route.
 
+### 2026-08-12 — Skill stats are a category-match approximation, not per-finding attribution
+
+**What:** `SkillsService.getStats`/`list` derive "pull frequency / accept
+rate / findings by category" for a skill from real `agent_skills`/`reviews`
+/`findings` rows, filtered by a fixed `SkillType → FindingCategory[]` map
+(`rubric`/`custom` match every category, `security` matches only
+`security`, `convention` matches only `style`) — never from an explicit link
+between a finding and the skill that produced it.
+**Why:** no such link exists in the schema (`findings` only carries
+`review_id`); building one means tagging each LLM finding with which
+attached skill(s) actually influenced it — a structured-output/prompt
+-assembly change in `reviewer-core`, out of scope for a stats-display
+feature.
+**Rejected:** fabricated placeholder numbers (looks real, traces to
+nothing); a full per-finding `skill_id` captured at review time (correct,
+but a much larger, riskier change touching the LLM output schema and every
+review call site). `src/modules/skills/helpers.ts`
+(`SKILL_TYPE_FINDING_CATEGORIES`, `computeSkillStats`).
+
 ## What Works
 
 _None yet._
@@ -59,10 +78,27 @@ _None yet._
 
 ## Codebase Patterns
 
-_None yet._
+- **2026-08-12** — `server/src/db/seed.ts` inserts skill rows directly via
+  `db.insert(t.skills)`, bypassing `SkillsRepository.insert()` — so seeded
+  skills got a `skills.version` column but no matching `skill_versions` row
+  until this session added an explicit snapshot insert into the seed loop.
+  Any repository method with a side effect beyond the row it writes
+  (versioning, an audit trail, a related-table write) is silently skipped by
+  direct `db.insert()` in seed/fixture code — check `seed.ts` before
+  assuming `GET /skills/:id/versions` returning `[]` is a bug in the
+  versions feature itself. `src/db/seed.ts` (skill-seeding loop),
+  `src/modules/skills/repository.ts` (`insert`/`snapshotVersion`).
 
 ## Tool & Library Notes
 
+- **2026-08-12** — `fflate`'s `unzipSync(data, { filter })` skips
+  decompressing an entry the filter rejects entirely — it is not "inflate
+  then discard," the rejected entry's bytes are never inflated at all. This
+  is a real security property, not just tidiness, for an import feature that
+  must never process an archive's executable entries: filtering to `.md`
+  /`.txt` before calling `unzipSync` means a `.sh`/binary sibling in the zip
+  is never decompressed, let alone read or run. `server/src/modules/skills
+  /helpers.ts` (`extractFromZip`).
 - **2026-08-05** — `@gitbeaker/rest`'s `agent` constructor option is typed as
   Node's `http.Agent` (from `'http'`) but at runtime is forwarded verbatim as
   fetch's `dispatcher` (`@gitbeaker/rest/dist/index.mjs`: `if (agent)
@@ -105,6 +141,23 @@ _None yet._
 
 ## Recurring Errors & Fixes
 
+- **2026-08-12** — Wrapping a "delete then bulk-insert" full-replace in a
+  `db.transaction()` does NOT make it safe against two overlapping calls
+  when the target rows don't exist yet. Postgres only serializes concurrent
+  transactions on a shared lock, and `DELETE WHERE agent_id = X` against zero
+  existing rows takes no lock — so two transactions both no-op the delete,
+  then both plain-INSERT the same `(agent_id, skill_id)` PK and the second
+  one 500s with `duplicate key value violates unique constraint
+  "agent_skills_agent_id_skill_id_pk"` at commit time, transaction wrap
+  notwithstanding. Reproduced by firing two `POST /agents/:id/skills` for a
+  freshly-created agent (no prior links) via `Promise.all`. The transaction
+  only helps once there's an existing row to lock on the DELETE; the actual
+  fix is `.onConflictDoUpdate({ target: [...pk cols], set: { col:
+  sql`excluded."col"` } })` on the INSERT itself, which turns the losing
+  side of the race into an UPDATE instead of a crash — needed even inside a
+  transaction, for any "replace the full set of rows for this key" pattern.
+  `src/modules/agents/repository.ts` (`AgentsRepository.setSkills`), test:
+  `test/agents-skills-linking.it.test.ts`.
 - **2026-08-05** — Adding an optional field to a widely-shared interface
   (e.g. `RepoRef.insecureTls?: boolean`) is invisible to `tsc` at every call
   site that omits it — typecheck stays 100% clean even though the field

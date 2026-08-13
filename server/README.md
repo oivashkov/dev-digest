@@ -6,12 +6,12 @@ with `repo-intel`, stores agents, and runs the reviewer (diff → `reviewer-core
 (pgvector). Adapters (LLM, GitHub, GitLab, git, ast-grep, …) sit behind a DI
 container so they can be swapped for mocks in tests.
 
-> This is the **starter** module set. Later course lessons add their own modules
-> (skills, intent/smart-diff, blast, brief/context/onboarding, eval/ci/hooks,
-> memory, plugins, …) — each is a self-contained `modules/<name>/` plugin plus,
-> usually, a slot it starts feeding the reviewer prompt. The DB schema already
-> contains **every** table; the unused ones simply sit empty until a lesson fills
-> them.
+> This is the **starter** module set, plus `skills` (L02, landed). Later course
+> lessons add their own modules (intent/smart-diff, blast,
+> brief/context/onboarding, eval/ci/hooks, memory, plugins, …) — each is a
+> self-contained `modules/<name>/` plugin plus, usually, a slot it starts
+> feeding the reviewer prompt. The DB schema already contains **every** table;
+> the unused ones simply sit empty until a lesson fills them.
 
 - **Stack:** Fastify 5 (`@fastify/helmet`, `@fastify/rate-limit`, `@fastify/cors`,
   `fastify-sse-v2` for streaming run traces), Drizzle ORM, `postgres`, pgvector.
@@ -77,7 +77,10 @@ flowchart TB
     reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)"]
   end
   subgraph Agents["Agents"]
-    agents["agents<br/>/agents · /agents/:id"]
+    agents["agents<br/>/agents · /agents/:id<br/>/agents/:id/skills (link/reorder)"]
+  end
+  subgraph Skills["Skills"]
+    skills["skills<br/>/skills · /skills/:id<br/>/skills/:id/versions · /:id/versions/:v/restore<br/>/skills/:id/stats · /skills/import/preview"]
   end
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]

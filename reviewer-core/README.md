@@ -31,8 +31,11 @@ model. `review/run.ts` orchestrates the run (single-pass by default).
 The engine also accepts optional prompt slots the **course lessons** start
 feeding it — `skills` (L02), `memory` (L07), `specs` (L05), `callers` — plus a
 `reduce()`/map-reduce path and a `toReview()` CI payload helper used from L06.
-In the starter the server passes only the diff, system prompt, and repo map; the
-extra slots are omitted, so `assemblePrompt` simply leaves those sections out.
+`skills`, `callers`, and `repoMap` are wired end-to-end from the server today:
+`run-executor.ts` resolves an agent's linked, ENABLED skills (ordered) into
+`ReviewInput.skills`, and repo-intel context into `callers`/`repoMap`. `memory`
+and `specs` remain unfed — those slots are still omitted, so `assemblePrompt`
+simply leaves those sections out until their lessons land.
 
 ## Public API
 

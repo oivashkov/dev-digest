@@ -4,6 +4,28 @@
    web fonts. */
 @import "../vendor/ui/styles.css";
 
+/* Categorical palette for the skill Stats tab's "findings by category" donut
+   — fixed hue order (never cycled/reassigned), validated with the dataviz
+   skill's `scripts/validate_palette.js` for both [data-theme] modes (worst
+   adjacent CVD ΔE 9.1 light / 8.4 dark; relief satisfied by the legend's
+   always-visible text labels). Not in vendor/ui/styles.css (vendored) since
+   this palette is specific to one feature's chart, not a design-system token. */
+:root,
+[data-theme="dark"] {
+  --cat-bug: #3987e5;
+  --cat-security: #008300;
+  --cat-perf: #d55181;
+  --cat-style: #c98500;
+  --cat-test: #199e70;
+}
+[data-theme="light"] {
+  --cat-bug: #2a78d6;
+  --cat-security: #008300;
+  --cat-perf: #e87ba4;
+  --cat-style: #eda100;
+  --cat-test: #1baf7a;
+}
+
 @font-face {
   font-family: "Inter";
   font-style: normal;
