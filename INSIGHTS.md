@@ -16,6 +16,46 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-17 — `implementer` preloads skills via frontmatter `skills:` and runs one plan step at a time, in parallel-safe "Owned paths"
+
+**What:** `.claude/agents/implementer.md` uses subagent frontmatter's
+`skills:` field (confirmed real via `code.claude.com/docs/en/sub-agents`:
+injects full skill content at startup, not just the description) to preload
+12 fixed project skills, instead of looking each file up in
+`.claude/skills/pr-self-review/references/skill-scope-map.md` and invoking
+`Skill` per file. `.claude/agents/planner.md` now splits a plan into steps
+each with disjoint **Owned paths** and a **Type** (backend/ui/core/e2e), and
+`implementer` executes exactly one step per invocation — multiple instances
+can run different steps of the same plan in parallel as long as Owned paths
+don't overlap. `implementer` has no `Write`/`Edit` even for its own output;
+its precondition step persists the plan to `<module>/specs/<slug>-plan.md`
+**idempotently** (skip if already written, to avoid two parallel instances
+racing on the same file) rather than overwriting.
+**Why:** preloading is the Anthropic-documented mechanism for this, cheaper
+and more reliable than a per-file glob lookup + on-demand `Skill` call, and
+since all 12 skills stay available regardless of a step's type, a stale
+"skills the implementer will apply" line in the plan is low-stakes — it's a
+judgment hint (§4 of both files' shared Type→skill table), not a hard gate.
+The Owned-paths/parallel model matches a user-supplied draft that turned out
+to check out: its per-module conventions (DI via `container.ts` +
+`adapters/mocks.ts`, `container.vcsFor()`, TanStack Query + hooks-only data
+access, `next-intl`, `groundFindings()` mandatory, injected `LLMProvider`)
+were all confirmed against `server/AGENTS.md`/`client/AGENTS.md`/
+`reviewer-core/AGENTS.md` and folded into `implementer.md` §4. `planner`
+stays tool-level read-only (matching `researcher.md`'s no-Write/Edit
+boundary); the same draft's addition of an `Agent` tool to `implementer` was
+rejected — implementer executes, it does not spawn other agents or
+instances, that stays the invoking session's call.
+**Rejected:** giving `planner` `Write` scoped only to `specs/` — Claude
+Code's `tools` frontmatter grants/denies by tool name only, not by path, so
+that would give unrestricted `Write` in practice; persisting from
+`implementer`'s side (idempotently) keeps the boundary real. Also rejected:
+`implementer` self-persisting the plan unconditionally, which would race
+when multiple instances run the same plan's steps in parallel — made
+idempotent instead. One `<module>/insights/` directory path appeared in the
+user's draft; the repo's actual convention is a single `<module>/INSIGHTS.md`
+file, kept as-is.
+
 ### 2026-08-06 — AGENTS.md as source of truth, CLAUDE.md a thin `@AGENTS.md` import
 
 **What:** each of the 5 curated agent-notes files (root + one per package) is
