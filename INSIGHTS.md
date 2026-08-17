@@ -16,6 +16,37 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-17 — Four new pipeline subagents (`test-writer`, `architecture-reviewer`, `plan-verifier`, `doc-writer`) split into read-only-auditor vs. prompt-scoped-write tiers
+
+**What:** Per `docs/plans/new-subagents.md`, added
+`.claude/agents/{test-writer,architecture-reviewer,plan-verifier,doc-writer}.md`,
+built by 4 parallel `implementer` instances (one per file, disjoint Owned
+paths). They split into two tool-privilege tiers that map directly onto
+role: the two auditors (`architecture-reviewer`, `plan-verifier`) get exactly
+`Read, Grep, Glob, Bash` — no `Write`/`Edit`/`Skill`/`Agent` — matching
+`planner.md`'s existing read-only precedent; the two producers
+(`test-writer`, `doc-writer`) get `Write`/`Edit`/`Skill` but their write
+scope (test files only; `docs/`+`specs/` only) is enforced **entirely by
+prompt text**, repeated in the tools-and-scope section *and* the closing
+Scope-boundaries section — there is no harness mechanism to grant `Write`
+scoped to a path glob (same limit already recorded for `planner`, above).
+`plan-verifier` additionally needed an explicit "note it, never let it
+change your verdict" carve-out to keep it from drifting into
+`architecture-reviewer`'s or `code-review`'s territory when it notices an
+unrelated issue while tracing a plan item.
+**Why:** keeps each write-capable agent's blast radius provably narrow (a
+reviewer can grep the prompt for the restriction) despite tool grants being
+coarse-grained by name only; keeps auditors honest by construction (no tool
+to drift into editing with) rather than by instruction alone. Evidence cited
+inside `architecture-reviewer.md`'s "what NOT to report" calibration
+(e.g. the known `container.github()` deviation at
+`server/src/modules/settings/routes.ts:96`) was re-verified live against the
+repo at authoring time rather than trusted from skill prose, since skills
+describe the pattern class but not necessarily current line numbers.
+**Rejected:** giving any of the four `Agent` (spawning) — matches the
+existing `researcher`/`planner`/`implementer` boundary, all orchestration
+stays the invoking session's call.
+
 ### 2026-08-17 — `implementer` preloads skills via frontmatter `skills:` and runs one plan step at a time, in parallel-safe "Owned paths"
 
 **What:** `.claude/agents/implementer.md` uses subagent frontmatter's
