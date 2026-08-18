@@ -244,4 +244,18 @@ _None yet._
 
 ## Open Questions
 
-_None yet._
+- **2026-08-18** — Intent Layer's `classifyIntent` (`reviewer-core/src/review/intent.ts`)
+  only receives the changed-file list / diff-stat as a **fallback signal**,
+  when there is no meaningful description/ticket/plan-ref
+  (`server/src/modules/reviews/intent.ts`'s `computeIntent`: `diffStat` is
+  built only `if (!hasResolvedPlanRef && !hasTicketBody && !hasDescription)`).
+  An independently-designed alternative (reviewed 2026-08-18, not this
+  session's own design) always feeds a compact file-list + hunk-header shape
+  (no line content) as a **base** signal alongside whatever text exists, on
+  the reasoning that `in_scope`/`out_of_scope` are more accurate when
+  cross-checked against what actually changed, not just what the author
+  wrote. Tracked as task "Consider: always feed file+hunk shape into
+  classifyIntent" (see harness task list) — not decided either way; revisit
+  before extending `Intent`'s scope fields or if `in_scope`/`out_of_scope`
+  accuracy complaints show up. Tradeoff: more tokens on every classify call
+  (even high-confidence ones) vs. better-grounded scope statements.
