@@ -1,0 +1,22 @@
+{
+  "toggle": {
+    "smart": "Smart order",
+    "original": "Original order"
+  },
+  "groups": {
+    "core": {
+      "label": "Core logic",
+      "description": "the substance of the change"
+    },
+    "wiring": {
+      "label": "Wiring",
+      "description": "hooks the core into the app"
+    },
+    "boilerplate": {
+      "label": "Boilerplate",
+      "description": "generated/mechanical"
+    }
+  },
+  "findingsCount": "{count} {count, plural, one {finding} other {findings}}",
+  "jumpAriaLabel": "Jump to the first finding in {path}"
+}

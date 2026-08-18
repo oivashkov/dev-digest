@@ -1,5 +1,5 @@
 import type { Container } from '../../platform/container.js';
-import type { FindingActionKind, PrIntentRecord, RunEventKind, RunTrace } from '@devdigest/shared';
+import type { FindingActionKind, PrIntentRecord, RunEventKind, RunTrace, SmartDiff } from '@devdigest/shared';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import type { AgentRow } from '../../db/rows.js';
 import { ReviewRepository } from './repository.js';
@@ -8,6 +8,7 @@ import { ReviewRunExecutor, type Logger } from './run-executor.js';
 import { actOnFinding as actOnFindingImpl } from './findings.js';
 import { reviewToDto } from './helpers.js';
 import { getOrComputeIntent as getOrComputeIntentImpl } from './intent.js';
+import { buildSmartDiff } from './smart-diff.js';
 
 // Re-export DTO types + converters for backward-compatible imports from
 // './service.js' (these previously lived here; logic now in ./helpers.ts).
@@ -208,5 +209,34 @@ export class ReviewService {
     if (!intent) throw new NotFoundError('PR intent not available');
 
     return { ...intent, pr_id: prId };
+  }
+
+  // ===========================================================================
+  // SmartDiff (deterministic, no LLM — recomputed fresh on every call, no
+  // caching table; see `docs/plans/smart-diff.md` §3/§4)
+  // ===========================================================================
+
+  /**
+   * `GET /pulls/:id/smart-diff`. Workspace-scoped PR lookup (same pattern as
+   * `reviewsForPull`/`getOrComputeIntent`), then feeds the PR's changed files
+   * and the newest review's non-dismissed findings into the pure
+   * `buildSmartDiff` classifier. Always resolves — `groups` is empty only when
+   * the PR itself has no changed files; there is no compute-if-missing/404
+   * semantics like intent's, because this is a free, instant computation, not
+   * a cached LLM result.
+   */
+  async getSmartDiff(workspaceId: string, prId: string): Promise<SmartDiff> {
+    const pull = await this.repo.getPull(workspaceId, prId);
+    if (!pull) throw new NotFoundError('Pull request not found');
+
+    const files = await this.repo.getPrFiles(prId);
+    const reviews = await this.repo.reviewsForPull(prId);
+    const latestFindings = reviews[0]?.findings ?? [];
+    const findings = latestFindings.filter((f) => f.dismissedAt == null);
+
+    return buildSmartDiff(
+      files.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
+      findings.map((f) => ({ file: f.file, start_line: f.startLine, end_line: f.endLine })),
+    );
   }
 }

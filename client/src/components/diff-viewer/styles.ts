@@ -75,9 +75,18 @@ export function chevronFor(open: boolean): CSSProperties {
   };
 }
 
-/** Row background per line kind (add/del tinted, others transparent). */
-export function lineRowFor(kind: Line["kind"]): CSSProperties {
-  const background = kind === "add" ? "var(--code-add)" : kind === "del" ? "var(--code-del)" : "transparent";
+/** Row background per line kind (add/del tinted, others transparent). A
+ *  `highlighted` line (e.g. a finding's anchor line) overrides the kind-based
+ *  tint with a warn tint, regardless of add/del/ctx — the highlight signal
+ *  takes priority since it flags something the reviewer must look at. */
+export function lineRowFor(kind: Line["kind"], highlighted = false): CSSProperties {
+  const background = highlighted
+    ? "var(--warn-bg)"
+    : kind === "add"
+      ? "var(--code-add)"
+      : kind === "del"
+        ? "var(--code-del)"
+        : "transparent";
   return { display: "flex", alignItems: "stretch", fontSize: 13, lineHeight: "20px", background };
 }
 
