@@ -5,6 +5,16 @@ A guide to picking the LLM behind a reviewer agent. The model is set per agent
 `openrouter` / `deepseek/deepseek-v4-flash`. You can change it per agent in the
 studio (the model dropdown) or via `PUT /agents/:id { "model": "…" }`.
 
+> This guide is scoped to the **main review model** — the one graded above on
+> severity calibration and false-positive rate. It is a different decision from
+> the `review_intent` entry in `FEATURE_MODELS` (which model classifies a PR's
+> intent/scope, `server/src/modules/reviews/intent.ts`), a smaller, cheaper
+> classification call that also defaults to `deepseek-v4-flash` but for a
+> different reason — its output has no `confidence` field to calibrate (the
+> caller assigns that deterministically), so severity-calibration quality
+> doesn't apply there the way it does here. Don't conflate the two "which
+> model" knobs.
+
 ## Why the model matters
 
 The prompts (see [`README.md`](./README.md)) tell the model *what* to do; the model

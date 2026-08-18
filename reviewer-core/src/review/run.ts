@@ -71,6 +71,14 @@ export interface ReviewInput {
   /** PR author's description/body (untrusted; truncated + delimiter-wrapped in
       the prompt). Empty/undefined → section omitted. */
   prDescription?: string;
+  /**
+   * Derived PR intent/scope (Intent Layer; untrusted, author-derived). The
+   * caller resolves this via `classifyIntent` + its own confidence tiering,
+   * persists it, and passes the resulting summary string back in on
+   * subsequent calls — this engine does no classification or persistence
+   * itself. Empty/undefined → section omitted.
+   */
+  intent?: string;
   /** Task framing line, e.g. "Review PR #482 …". */
   task?: string;
   /** Override the structured-output retry budget. */
@@ -135,6 +143,7 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewOutco
     callers: input.callers,
     repoMap: input.repoMap,
     prDescription: input.prDescription,
+    intent: input.intent,
     task: input.task,
   };
 

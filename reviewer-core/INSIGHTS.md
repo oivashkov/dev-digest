@@ -49,7 +49,18 @@ _None yet._
 
 ## Codebase Patterns
 
-_None yet._
+- **2026-08-18** — a new optional `PromptParts` slot (e.g. `intent`) that gets
+  written into `assemblePrompt`'s `assembly` trace object must ALSO be added
+  to the `PromptAssembly` Zod schema in
+  `server/src/vendor/shared/contracts/trace.ts`, not just to `PromptParts`
+  here. The `assembly` local in `prompt.ts` is declared `const assembly:
+  PromptAssembly = {...}`, so an extra key fails typecheck immediately — but
+  even without the type annotation it would silently succeed then get
+  stripped later when the server calls `RunTrace.parse()` to persist the
+  trace (`z.object()` strips unknown keys by default). `trace.ts` isn't
+  listed as an Owned path for any step in `docs/plans/intent-layer.md`'s
+  contracts step — it's a gap in that plan's path table, not an oversight to
+  repeat: whichever slot you add here, check `trace.ts` too.
 
 ## Tool & Library Notes
 

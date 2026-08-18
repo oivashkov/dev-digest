@@ -3,8 +3,11 @@
 The DevDigest UI: import repos, browse pull requests, run and read AI reviews,
 and author agents + reusable Skills. App Router + React Server/Client
 components, data via **TanStack Query** hooks over the Fastify API. (This is
-the starter surface plus Skills Lab (L02); course lessons still add Memory,
-Eval, Blast/Brief, multi-agent, CI, and dashboard screens.)
+the starter surface plus Skills Lab (L02) and the Intent Layer — the PR
+detail page's `IntentCard` shows the classified intent/scope, the first piece
+of the eventual `PrBrief`; Blast Radius, Risks, PR History, and Smart Diff are
+still unbuilt future course lessons. Course lessons still add Memory, Eval,
+multi-agent, CI, and dashboard screens.)
 
 - **Stack:** Next.js 15 (App Router), React 19, TanStack Query, `next-intl`
   (messages in `messages/<locale>/*.json`), `recharts`, `mermaid`,
@@ -33,7 +36,7 @@ flowchart TD
   SETTINGS["/settings/:section<br/>API keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
-  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss)"| API
+  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss)<br/>GET /pulls/:id/intent · POST /pulls/:id/intent/refresh"| API
   AGENTS -->|"/agents · /agents/:id · /agents/:id/skills"| API
   SKILLS -->|"/skills · /skills/:id · /skills/:id/versions · /:id/stats<br/>/skills/import/preview"| API
   CONV -->|"GET /repos/:id/conventions<br/>POST /repos/:id/conventions/extract · PATCH /conventions/:id"| API

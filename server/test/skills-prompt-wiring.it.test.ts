@@ -45,6 +45,11 @@ d('Skills → prompt assembly wiring (Testcontainers pg)', () => {
     await pg?.stop();
   });
 
+  // `review_intent`'s FEATURE_MODELS default is `openrouter/deepseek-v4-flash`
+  // (Intent Layer) — ReviewRunExecutor calls getOrComputeIntent once per batch,
+  // before the per-agent loop, resolving that model via container.llm('openrouter').
+  // Mock it too so a real OPENROUTER_API_KEY on the machine running this suite
+  // never makes a genuine network call (server/INSIGHTS.md, 2026-08-18).
   function appWith() {
     return buildApp({
       config: config(),
@@ -52,7 +57,14 @@ d('Skills → prompt assembly wiring (Testcontainers pg)', () => {
       overrides: {
         embedder: new MockEmbedder(),
         git: new MockGitClient({ diff: DIFF }),
-        llm: { openai: new MockLLMProvider('openai', { structured: CLEAN_REVIEW }) },
+        llm: {
+          openai: new MockLLMProvider('openai', { structured: CLEAN_REVIEW }),
+          openrouter: new MockLLMProvider('openrouter', {
+            structuredBySchema: {
+              IntentExtraction: { intent: 'test intent', in_scope: [], out_of_scope: [] },
+            },
+          }),
+        },
       },
     });
   }

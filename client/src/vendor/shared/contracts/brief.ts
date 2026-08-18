@@ -6,10 +6,25 @@ import { z } from 'zod';
  */
 
 // ---- Intent ----
-export const Intent = z.object({
+/** The raw shape returned by the intent-classifier LLM call — no confidence. */
+export const IntentExtraction = z.object({
   intent: z.string(),
   in_scope: z.array(z.string()),
   out_of_scope: z.array(z.string()),
+});
+export type IntentExtraction = z.infer<typeof IntentExtraction>;
+
+/**
+ * `IntentExtraction` plus server-computed confidence/provenance. `confidence`
+ * is NEVER a model self-report — it is assigned deterministically from which
+ * signals were actually available (see `tierFor()` in
+ * `server/src/modules/reviews/intent.ts`), the same principle as
+ * `Finding.confidence`/`MemoryItem.confidence`.
+ */
+export const Intent = IntentExtraction.extend({
+  confidence: z.number().min(0).max(1),
+  source: z.enum(['spec', 'ticket', 'description', 'inferred']).nullish(),
+  plan_refs: z.array(z.string()).default([]),
 });
 export type Intent = z.infer<typeof Intent>;
 

@@ -46,6 +46,18 @@ export {
   type ReviewMode,
 } from './review/run.js';
 
+// Intent classification: given (title + resolved description/ticket/plan
+// excerpts/diff-stat + LLM) → { intent, in_scope, out_of_scope } — no
+// confidence (the caller assigns that deterministically, never self-reported).
+export {
+  classifyIntent,
+  DEFAULT_INTENT_MAX_RETRIES,
+  type IntentClassificationInput,
+  type IntentClassificationOutcome,
+  type IntentTicketInput,
+  type PlanExcerptInput,
+} from './review/intent.js';
+
 // Output: grounded Review → GitHubReviewPayload (body + inline comments + event).
 export {
   toReviewPayload,
