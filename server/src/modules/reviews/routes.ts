@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { PrIntentRecord, RunRequest } from '@devdigest/shared';
+import { PrIntentRecord, RunRequest, SmartDiff } from '@devdigest/shared';
 import type { RunEvent } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
@@ -16,6 +16,7 @@ import { ReviewService } from './service.js';
  *   POST   /findings/:id/(accept|dismiss)              → finding actions
  *   GET    /pulls/:id/intent                           → PR intent (compute-if-missing, cached)
  *   POST   /pulls/:id/intent/refresh                   → PR intent (forced recompute)
+ *   GET    /pulls/:id/smart-diff                       → files grouped by review risk (deterministic, no LLM)
  */
 const FINDING_ACTIONS = ['accept', 'dismiss'] as const;
 export default async function reviewsRoutes(appBase: FastifyInstance) {
@@ -139,6 +140,18 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
     const { workspaceId } = await getContext(container, req);
     return service.reviewsForPull(workspaceId, req.params.id);
   });
+
+  // ---- SmartDiff: files grouped by review risk (deterministic, no LLM) ----
+  // Recomputed fresh on every call — no caching table, no rate limit (unlike
+  // the LLM-triggering intent/review routes above).
+  app.get(
+    '/pulls/:id/smart-diff',
+    { schema: { params: IdParams, response: { 200: SmartDiff } } },
+    async (req) => {
+      const { workspaceId } = await getContext(container, req);
+      return service.getSmartDiff(workspaceId, req.params.id);
+    },
+  );
 
   // ---- Delete a whole review run (one agent's pass) + its findings --------
   app.delete('/reviews/:id', { schema: { params: IdParams } }, async (req) => {

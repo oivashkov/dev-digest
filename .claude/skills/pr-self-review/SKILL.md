@@ -45,7 +45,7 @@ that base and `HEAD`, plus uncommitted/staged changes — not just the last
 commit.
 
 **2. Diff-size guardrail.** Count changed files and lines. If it exceeds
-**25 files or 1500 changed lines**, stop the full review: report which
+**25 files or 1875 changed lines**, stop the full review: report which
 skills *would* apply (from the map) and recommend `/code-review ultra`
 instead. Don't attempt a shallow partial pass and don't silently skip this
 check — say explicitly that the diff was too large for this gate.

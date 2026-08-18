@@ -72,6 +72,53 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-19** — `src/components/diff-viewer/*` (`FileCard`, `CodeLine`,
+  `DiffViewer`, `CommentCard`, `OutdatedComments`, `InlineComposer`,
+  `CommentThreadView`) has ZERO dedicated `*.test.tsx` files despite being
+  fairly central/complex (patch parsing, comment threading, additive
+  scroll/highlight props from the SmartDiff step) — confirmed via `find src
+  -name "*.test.tsx"`, every existing test file in this repo sits directly
+  under an `_components/<FeatureName>/` folder (page-level feature
+  components), never under the shared low-level `components/diff-viewer/`
+  primitives folder. Coverage for `FileCard`'s additive props
+  (`defaultOpen`/`highlightLines`/`findingCount`/`scrollToLine`/`scrollNonce`)
+  comes entirely indirectly, through `SmartDiffViewer.test.tsx` (which
+  exercises `FileCard` as a real child, not mocked). When a task suggests
+  "add a test for this shared primitive," check `find src -name
+  "*.test.tsx"` for the folder's actual convention first — this repo's is
+  "top-level feature component only," not "every reusable subcomponent," and
+  adding one just for a specific prop would be the only test file in its
+  folder, an inconsistent precedent.
+- **2026-08-19** — `diff-viewer/FileCard`'s `findingCount` prop only renders a
+  decorative icon+number badge in the file header (`FileCard.tsx:102-109`) —
+  it has no `onClick`, so it is not a usable click target for a
+  scroll-to-finding affordance even though it visually looks like one. A
+  consumer that needs "click to jump to this file's first finding" (e.g.
+  `SmartDiffViewer`) must render its own clickable control alongside/above
+  `FileCard` and drive `FileCard`'s existing `scrollToLine`/`scrollNonce`
+  props from it, rather than assuming the header badge is interactive or
+  adding an `onClick` to it (out of scope once `FileCard.tsx` belongs to a
+  different plan step / isn't yours to touch).
+  `client/src/app/repos/[repoId]/pulls/[number]/_components/SmartDiffViewer/SmartDiffViewer.tsx`,
+  `client/src/components/diff-viewer/FileCard/FileCard.tsx:102-109`.
+- **2026-08-19** — When a shared low-level component (e.g.
+  `diff-viewer/FileCard`) needs a byte-identical-when-omitted extension for a
+  new higher-level consumer, the safe pattern is: (1) every new prop is
+  optional with `undefined` behaving exactly like the old signature — e.g.
+  `useState(defaultOpen ?? <old size check>)`, not `useState(defaultOpen ??
+  false)`, so a caller that never passes `defaultOpen` still gets the
+  original size-based default; (2) style-builder functions in `styles.ts`
+  take the new flag as an *additional optional parameter with a default*
+  (`lineRowFor(kind, highlighted = false)`), never a second required arg, so
+  every existing call site compiles and renders unchanged without being
+  touched; (3) numeric "is this active" props are checked with `(x ?? 0) > 0`
+  rather than `!!x && x > 0` (redundant per `react-best-practices`'
+  conditional-rendering rule) or bare `x > 0` (fails strict TS when `x` is
+  `number | undefined`). Verified with an ad hoc RTL render exercising both
+  the old zero-prop call and the new-prop call side by side — cheaper than a
+  permanent test file when the consumer doesn't exist yet.
+  `client/src/components/diff-viewer/FileCard/FileCard.tsx`,
+  `client/src/components/diff-viewer/styles.ts`.
 - **2026-08-17** — `src/lib/api.ts` never grows per-endpoint wrapper
   functions (no `getX()`/`postY()` exports beyond the generic
   `api.get/post/put/patch/del`) — every hook in `src/lib/hooks/*` builds the

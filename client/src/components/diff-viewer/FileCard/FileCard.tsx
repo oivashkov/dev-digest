@@ -30,12 +30,39 @@ function threadsForLine(ln: Line, matched: Map<string, CommentThread[]>): Commen
   return out;
 }
 
-export function FileCard({ file, commenting }: { file: PrFile; commenting?: DiffCommentApi }) {
+export function FileCard({
+  file,
+  commenting,
+  defaultOpen,
+  highlightLines,
+  findingCount,
+  scrollToLine,
+  scrollNonce,
+}: {
+  file: PrFile;
+  commenting?: DiffCommentApi;
+  /** Overrides the AUTO_EXPAND_MAX_LINES-based open/closed default
+   *  (`FileCard.tsx`). When omitted, existing size-based behavior applies
+   *  unchanged. */
+  defaultOpen?: boolean;
+  /** Gutter line numbers to visually highlight (e.g. a finding's anchor
+   *  lines) — propagated to the matching `CodeLine`(s). */
+  highlightLines?: number[];
+  /** When > 0, renders an "N findings" badge next to the comment-count
+   *  badge in the file header. */
+  findingCount?: number;
+  /** Gutter line number to scroll into view. Combined with `scrollNonce` so
+   *  a repeat trigger on the same line still re-scrolls — same target/nonce
+   *  pattern as `FindingsTab.tsx`. */
+  scrollToLine?: number;
+  scrollNonce?: number;
+}) {
   const t = useTranslations("shell");
   const [open, setOpen] = React.useState(
-    (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
+    defaultOpen ?? (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
   );
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
+  const highlightSet = React.useMemo(() => new Set(highlightLines ?? []), [highlightLines]);
 
   // Group this file's comments into threads, then split into ones we can anchor
   // to a rendered line vs. "outdated" (GitHub dropped the line / it's not here).
@@ -72,21 +99,35 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
             {commentCount}
           </span>
         )}
+        {(findingCount ?? 0) > 0 && (
+          <span
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--warn)" }}
+          >
+            <Icon.AlertOctagon size={12} />
+            {findingCount}
+          </span>
+        )}
       </div>
       {open && (
         <div style={s.fileBody}>
           {lines.length === 0 ? (
             <div style={s.noDiff}>{t("diffViewer.noDiffText")}</div>
           ) : (
-            lines.map((ln, i) => (
-              <CodeLine
-                key={i}
-                ln={ln}
-                path={file.path}
-                threads={threadsForLine(ln, matched)}
-                commenting={commenting}
-              />
-            ))
+            lines.map((ln, i) => {
+              const displayNo = ln.newNo ?? ln.oldNo;
+              return (
+                <CodeLine
+                  key={i}
+                  ln={ln}
+                  path={file.path}
+                  threads={threadsForLine(ln, matched)}
+                  commenting={commenting}
+                  highlighted={displayNo !== undefined && highlightSet.has(displayNo)}
+                  scrollTarget={scrollToLine !== undefined && displayNo === scrollToLine}
+                  scrollNonce={scrollNonce}
+                />
+              );
+            })
           )}
           {commenting && commenting.showComments && <OutdatedComments threads={outdated} />}
         </div>

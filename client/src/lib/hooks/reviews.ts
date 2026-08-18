@@ -14,6 +14,7 @@ import type {
   ReviewRunResponse,
   RunEvent,
   RunSummary,
+  SmartDiff,
 } from "@devdigest/shared";
 
 // ---- Active (in-flight) runs — server-side source of truth ----
@@ -118,6 +119,18 @@ export function useRefreshPrIntent(prId: string | null | undefined) {
       qc.setQueryData(["pr-intent", prId], data);
       qc.invalidateQueries({ queryKey: ["pr-intent", prId] });
     },
+  });
+}
+
+// ---- Smart Diff: risk-sorted file groups for the "Files changed" tab -----
+/** Deterministic, path-based file grouping (core/wiring/boilerplate) plus
+   finding-line anchors from the PR's latest review, freshly computed on every
+   call (no caching on the server — see `docs/plans/smart-diff.md`). */
+export function useSmartDiff(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["smart-diff", prId],
+    queryFn: () => api.get<SmartDiff>(`/pulls/${prId}/smart-diff`),
+    enabled: !!prId,
   });
 }
 

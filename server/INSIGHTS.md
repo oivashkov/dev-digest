@@ -170,6 +170,18 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-19** — `buildSmartDiff` (`src/modules/reviews/smart-diff.ts`) never
+  sees a finding's `dismissedAt` at all — its `SmartDiffFindingInput` type is
+  only `{file, start_line, end_line}`. Dismissed-finding exclusion happens one
+  layer up, in `ReviewService.getSmartDiff` (`service.ts`:
+  `latestFindings.filter((f) => f.dismissedAt == null)` before calling
+  `buildSmartDiff`). A unit test asserting "dismissed findings are excluded"
+  against the pure function is a false test — write it against
+  `getSmartDiff`/the route instead (this task's
+  `test/reviews-smart-diff-routes.it.test.ts` does). Same shape as intent's
+  `tierFor()` staying pure while its caller (`getOrComputeIntent`) does the
+  I/O/filtering — check which layer a filter actually lives in before
+  deciding where its test belongs, don't assume the pure classifier owns it.
 - **2026-08-18** — `GitClient.readFile(repo, path)` (`src/adapters/git/simple-git.ts:135-136`)
   does a bare `join(this.clonePathFor(repo), path)` with **no path-traversal
   guard of any kind** — any `..`/absolute segment resolves and reads outside
