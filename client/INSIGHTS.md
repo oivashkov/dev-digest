@@ -72,6 +72,16 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-17** — `src/lib/api.ts` never grows per-endpoint wrapper
+  functions (no `getX()`/`postY()` exports beyond the generic
+  `api.get/post/put/patch/del`) — every hook in `src/lib/hooks/*` builds the
+  path inline and calls `api.get<T>(...)`/`api.post<T>(...)` directly (see
+  every existing hook in `hooks/reviews.ts`, e.g. `usePrReviews`,
+  `useRunReview`). When adding a new endpoint's hook, don't add a matching
+  named function to `api.ts` even if asked to "match this file's pattern" —
+  the actual pattern in this file is that it stays generic; the per-endpoint
+  logic (path, method, query key, cache invalidation) belongs entirely in
+  the hook. `client/src/lib/api.ts`, `client/src/lib/hooks/reviews.ts`.
 - **2026-08-12** — This app's dark/light theming is `[data-theme="dark"
   |"light"]` on `<html>` only (`vendor/ui/styles.css:9-10`: `:root,
   [data-theme="dark"]` is the default block, `[data-theme="light"]`
@@ -132,6 +142,14 @@ _None yet._
 
 ## Tool & Library Notes
 
+- **2026-08-17** — `@testing-library/user-event` is NOT a dependency of
+  `client/` (only `@testing-library/react` + `jest-dom` are, per
+  `package.json`). Importing it compiles fine in an editor but fails
+  `pnpm typecheck` with `TS2307: Cannot find module
+  '@testing-library/user-event'`. Every existing interactive test in this
+  package uses `fireEvent` from `@testing-library/react` instead (e.g.
+  `FindingCard.test.tsx`, `ConventionCard.test.tsx`) — do the same rather
+  than adding the dependency. `client/package.json`.
 - **2026-08-13** — Running `pnpm build` (production) in `client/` while a
   `next dev` server is already live on the same machine corrupts the running
   dev process — both write to the same `.next/` directory, and the dev

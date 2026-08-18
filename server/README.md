@@ -74,7 +74,7 @@ flowchart TB
     polling["polling<br/>/repos/:id/poll"]
   end
   subgraph Review["Review & runs"]
-    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)"]
+    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)<br/>/pulls/:id/intent (GET) · /pulls/:id/intent/refresh (POST)"]
   end
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id<br/>/agents/:id/skills (link/reorder)"]
@@ -156,6 +156,21 @@ What the reviewer actually sends to the model is assembled in
 - **Grounding is mandatory.** Every finding must cite a line that exists in the
   diff or it is dropped (`groundFindings`), and the score is recomputed from the
   surviving findings — the model's self-reported score is ignored.
+- **PR intent is classified separately, then threaded in.** Before the diff even
+  reaches `reviewer-core`'s main pipeline, `run-executor.ts` calls the shared
+  `getOrComputeIntent(container, workspaceId, repo, pull, opts, log)`
+  (`modules/reviews/intent.ts`) — a cache-first pipeline (title + description +
+  a live-fetched linked ticket + regex-resolved, path-guarded plan/spec
+  excerpts + a diff-stat fallback → `reviewer-core`'s `classifyIntent` → a
+  deterministically-assigned confidence tier → persisted to `pr_intent`). The
+  same function backs `GET /pulls/:id/intent` (compute-if-missing, cached) and
+  `POST /pulls/:id/intent/refresh` (forced recompute) — a review run only ever
+  reuses whatever is already cached, computing inline just once if a PR is
+  reviewed without ever having been opened in the studio first. Failures
+  degrade to `undefined`/a 404, never fail a run. See
+  [`../docs/plans/intent-layer.md`](../docs/plans/intent-layer.md) for the full
+  design and [`../reviewer-core/README.md`](../reviewer-core/README.md) for
+  `classifyIntent` itself.
 
 ## Testing
 

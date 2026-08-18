@@ -78,6 +78,16 @@ export const prIntent = pgTable('pr_intent', {
   intent: text('intent').notNull(),
   inScope: jsonb('in_scope').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   outOfScope: jsonb('out_of_scope').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  /** Server-computed tier (never a model self-report) — see `tierFor()` in
+   *  `server/src/modules/reviews/intent.ts`. Nullable for rows written before
+   *  this column existed. */
+  confidence: doublePrecision('confidence'),
+  /** `'spec' | 'ticket' | 'description' | 'inferred'` — free text; the Zod
+   *  `Intent.source` enum is the source of truth, not a DB-level enum. */
+  source: text('source'),
+  planRefs: jsonb('plan_refs').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  createdAt: now(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const prBrief = pgTable('pr_brief', {

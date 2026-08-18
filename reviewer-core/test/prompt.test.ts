@@ -64,3 +64,27 @@ describe('assemblePrompt — ## PR description', () => {
     expect((assembly.pr_description as string).length).toBe(4000);
   });
 });
+
+describe('assemblePrompt — ## PR intent', () => {
+  it('renders the section (untrusted-wrapped) after ## PR description, before the diff', () => {
+    const { messages, assembly } = assemblePrompt({
+      system: 'sys',
+      diff: 'DIFF',
+      prDescription: 'Adds rate limiting.',
+      intent: 'Add rate limiting to public endpoints to prevent abuse.',
+    });
+    const user = messages[1]!.content;
+    expect(user).toContain('## PR intent');
+    expect(user).toContain('<untrusted source="pr-intent">');
+    expect(user).toContain('Add rate limiting to public endpoints to prevent abuse.');
+    expect(user.indexOf('## PR description')).toBeLessThan(user.indexOf('## PR intent'));
+    expect(user.indexOf('## PR intent')).toBeLessThan(user.indexOf('## Diff to review'));
+    expect(assembly.pr_intent).toContain('Add rate limiting');
+  });
+
+  it('omits the section when intent is undefined or blank (no behaviour change)', () => {
+    expect(userOf({ system: 'sys', diff: 'DIFF' })).not.toContain('## PR intent');
+    expect(assemblePrompt({ system: 'sys', diff: 'DIFF' }).assembly.pr_intent ?? null).toBeNull();
+    expect(userOf({ system: 'sys', diff: 'DIFF', intent: '   ' })).not.toContain('## PR intent');
+  });
+});

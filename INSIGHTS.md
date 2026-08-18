@@ -146,6 +146,19 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-18** — Extending a Zod contract with a `.default([])` field
+  breaks every existing *hand-written object literal* typed as that schema
+  at compile time, even though `.default()` makes the field optional on
+  `.parse()` input. `z.infer<typeof Schema>` (the OUTPUT type) still marks a
+  defaulted field as required, so `Intent.extend({ plan_refs:
+  z.array(z.string()).default([]), confidence: z.number()... })`
+  (`server/src/vendor/shared/contracts/brief.ts`) immediately broke
+  `pull.repo.ts`'s `getIntent()`, which builds an `Intent` object literal
+  by hand instead of parsing through the schema — caught by `pnpm
+  typecheck`, not a runtime surprise. This is expected/anticipated when a
+  step in a multi-step plan adds fields a *later, dependent* step's file is
+  supposed to fill in (Step 2 here); grep every hand-built literal of a
+  contract before assuming "additive" means zero breakage.
 - **2026-08-12** — A feature can be scaffolded consistently across the DB
   schema, the Zod contract, AND a pure-engine prompt slot with **zero lines
   connecting them at runtime** — no module, no route, no UI, no caller ever

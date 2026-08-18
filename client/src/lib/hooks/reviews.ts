@@ -4,10 +4,11 @@
 
 import React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, API_BASE } from "../api";
+import { api, API_BASE, ApiError } from "../api";
 import { notify } from "../toast";
 import type {
   FindingActionKind,
+  PrIntentRecord,
   PrReviewComment,
   ReviewRecord,
   ReviewRunResponse,
@@ -83,6 +84,40 @@ export function useDeleteReview(prId: string | null | undefined) {
   return useMutation({
     mutationFn: (reviewId: string) => api.del<{ ok: boolean }>(`/reviews/${reviewId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["reviews", prId] }),
+  });
+}
+
+// ---- PR intent (Intent Layer): compute-if-missing GET + forced-refresh POST --
+/** The PR's classified intent. GET is compute-if-missing (server computes and
+   caches on first call), so mounting this hook is what "opening the PR" lazily
+   triggers. A 404 means the server tried and genuinely couldn't compute it
+   (not the same as low confidence, which is still a normal 200) — don't retry
+   that automatically, it won't succeed without a Refresh. */
+export function usePrIntent(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["pr-intent", prId],
+    queryFn: () => api.get<PrIntentRecord>(`/pulls/${prId}/intent`),
+    enabled: !!prId,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status === 404) return false;
+      return failureCount < 3;
+    },
+  });
+}
+
+/** Force a fresh intent computation (the IntentCard's Refresh button), then
+   refresh usePrIntent's cache with the result. */
+export function useRefreshPrIntent(prId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!prId) throw new Error("useRefreshPrIntent: prId is required");
+      return api.post<PrIntentRecord>(`/pulls/${prId}/intent/refresh`);
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(["pr-intent", prId], data);
+      qc.invalidateQueries({ queryKey: ["pr-intent", prId] });
+    },
   });
 }
 

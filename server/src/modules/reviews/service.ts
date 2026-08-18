@@ -1,5 +1,5 @@
 import type { Container } from '../../platform/container.js';
-import type { FindingActionKind, RunEventKind, RunTrace } from '@devdigest/shared';
+import type { FindingActionKind, PrIntentRecord, RunEventKind, RunTrace } from '@devdigest/shared';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import type { AgentRow } from '../../db/rows.js';
 import { ReviewRepository } from './repository.js';
@@ -7,6 +7,7 @@ import { type ReviewDto, type ReviewDtoFinding } from './helpers.js';
 import { ReviewRunExecutor, type Logger } from './run-executor.js';
 import { actOnFinding as actOnFindingImpl } from './findings.js';
 import { reviewToDto } from './helpers.js';
+import { getOrComputeIntent as getOrComputeIntentImpl } from './intent.js';
 
 // Re-export DTO types + converters for backward-compatible imports from
 // './service.js' (these previously lived here; logic now in ./helpers.ts).
@@ -175,5 +176,37 @@ export class ReviewService {
 
   async getRunTrace(runId: string): Promise<RunTrace | undefined> {
     return this.repo.getRunTrace(runId);
+  }
+
+  // ===========================================================================
+  // PR intent (Intent Layer, triggers A/B — lazy compute-if-missing + refresh)
+  // ===========================================================================
+
+  /**
+   * `GET /pulls/:id/intent` (opts.force=false) and `POST
+   * /pulls/:id/intent/refresh` (opts.force=true) both land here. Resolves the
+   * PR + repo the same way `runReview` does, then delegates all
+   * signal-gathering/tiering/caching to the shared `getOrComputeIntent`
+   * (`./intent.js`) — this method's only job is workspace-scoped lookup +
+   * shaping the `PrIntentRecord` response (`Intent` + `pr_id`). Throws
+   * `NotFoundError` when the PR doesn't exist OR when computation couldn't
+   * produce a result (no cache and the fresh compute degraded to
+   * `undefined`) — both map to a 404 via the shared error handler.
+   */
+  async getOrComputeIntent(
+    workspaceId: string,
+    prId: string,
+    opts: { force: boolean },
+    log: Logger,
+  ): Promise<PrIntentRecord> {
+    const pull = await this.repo.getPull(workspaceId, prId);
+    if (!pull) throw new NotFoundError('Pull request not found');
+    const repo = await this.repo.getRepo(pull.repoId);
+    if (!repo) throw new NotFoundError('Repo not found');
+
+    const intent = await getOrComputeIntentImpl(this.container, workspaceId, repo, pull, opts, log);
+    if (!intent) throw new NotFoundError('PR intent not available');
+
+    return { ...intent, pr_id: prId };
   }
 }

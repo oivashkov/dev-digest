@@ -110,6 +110,14 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     await pg?.stop();
   });
 
+  // `review_intent`'s FEATURE_MODELS default is `openrouter/deepseek-v4-flash`
+  // (Intent Layer) — ReviewRunExecutor calls getOrComputeIntent once per batch,
+  // BEFORE the per-agent loop, which resolves that model and calls
+  // container.llm('openrouter'). Without a mock for it, on a machine with a real
+  // OPENROUTER_API_KEY this makes a genuine network call that can blow past
+  // waitForPrRuns' 10s poll window (server/INSIGHTS.md, 2026-08-18, "What Doesn't
+  // Work"). Always mock 'openrouter' too, keyed by the 'IntentExtraction' schema
+  // name (distinct from the review's own 'Review' schema) so both coexist.
   function appWith(structured: unknown, provider: 'openai' | 'anthropic' = 'openai') {
     return buildApp({
       config: config(),
@@ -119,6 +127,11 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
         git: new MockGitClient({ diff: DIFF }),
         llm: {
           [provider]: new MockLLMProvider(provider, { structured }),
+          openrouter: new MockLLMProvider('openrouter', {
+            structuredBySchema: {
+              IntentExtraction: { intent: 'test intent', in_scope: [], out_of_scope: [] },
+            },
+          }),
         },
       },
     });

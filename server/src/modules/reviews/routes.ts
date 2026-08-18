@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { RunRequest } from '@devdigest/shared';
+import { PrIntentRecord, RunRequest } from '@devdigest/shared';
 import type { RunEvent } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
@@ -14,6 +14,8 @@ import { ReviewService } from './service.js';
  *   GET    /runs/:id/trace                             → the single-document RunTrace
  *   GET    /pulls/:id/reviews                          → persisted reviews + findings for a PR
  *   POST   /findings/:id/(accept|dismiss)              → finding actions
+ *   GET    /pulls/:id/intent                           → PR intent (compute-if-missing, cached)
+ *   POST   /pulls/:id/intent/refresh                   → PR intent (forced recompute)
  */
 const FINDING_ACTIONS = ['accept', 'dismiss'] as const;
 export default async function reviewsRoutes(appBase: FastifyInstance) {
@@ -145,6 +147,31 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
     if (!ok) throw new NotFoundError('Review not found');
     return { ok: true };
   });
+
+  // ---- PR intent: lazy compute-if-missing, cached ---------------------------
+  app.get(
+    '/pulls/:id/intent',
+    { schema: { params: IdParams, response: { 200: PrIntentRecord } } },
+    async (req) => {
+      const { workspaceId } = await getContext(container, req);
+      return service.getOrComputeIntent(workspaceId, req.params.id, { force: false }, req.log);
+    },
+  );
+
+  // ---- PR intent: forced refresh -------------------------------------------
+  // Same rate limit as POST /pulls/:id/review — this is a real LLM-triggering
+  // endpoint too, just for the intent classifier instead of the review agent.
+  app.post(
+    '/pulls/:id/intent/refresh',
+    {
+      schema: { params: IdParams, response: { 200: PrIntentRecord } },
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (req) => {
+      const { workspaceId } = await getContext(container, req);
+      return service.getOrComputeIntent(workspaceId, req.params.id, { force: true }, req.log);
+    },
+  );
 
   // ---- Finding actions (accept / dismiss) ---------------------------------
   for (const action of FINDING_ACTIONS) {

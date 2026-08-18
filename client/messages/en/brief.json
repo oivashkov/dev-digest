@@ -15,5 +15,20 @@
     "blame": "blame",
     "noHistory": "No history available for this line.",
     "noCommits": "No commits found for this line."
+  },
+  "intent": {
+    "refresh": "Refresh",
+    "refreshTooltip": "Recompute this PR's intent",
+    "inScope": "In scope",
+    "outOfScope": "Out of scope",
+    "planRefs": "Referenced docs",
+    "source": {
+      "spec": "from spec",
+      "ticket": "from ticket",
+      "description": "from description",
+      "inferred": "inferred"
+    },
+    "errorTitle": "Couldn't load intent",
+    "errorBody": "Something went wrong computing this PR's intent."
   }
 }
