@@ -146,6 +146,20 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-19** — A `planner`-produced step that bundles 5+ distinct
+  responsibilities into one `implementer` Owned-paths slice costs
+  disproportionately more than splitting it would. Intent Layer's Step 4
+  (`getOrComputeIntent`: signal-gathering + path-traversal guard + live VCS
+  fetch + diff-stat fallback + in-flight dedup + `run-executor.ts` wiring,
+  all in one step) ran 226K tokens / 81 tool-uses / ~15.6min — clearly above
+  neighboring single-responsibility steps (Step 1: 126K, Step 5: 135K) —
+  because the implementer burned tool-calls re-verifying its own
+  cross-cutting assumptions inside one big, ambiguous slice instead of
+  paying the fixed per-step "read AGENTS.md/INSIGHTS.md" cost twice for two
+  narrower slices. When a plan step's own description needs "and" more than
+  twice to summarize, split it before handing it to `implementer`, even
+  though this repo's fixed per-agent context-loading tax makes more/smaller
+  steps individually less appealing.
 - **2026-08-18** — Extending a Zod contract with a `.default([])` field
   breaks every existing *hand-written object literal* typed as that schema
   at compile time, even though `.default()` makes the field optional on
@@ -207,6 +221,14 @@ _None yet._
 
 ## Tool & Library Notes
 
+- **2026-08-19** — A long multi-agent orchestration (Intent Layer: ~14
+  sequential/parallel `Agent` calls in one session) can hit the session's
+  API rate limit *mid-agent*, killing that agent with no `<usage>`/report at
+  all — its partial work and token spend are simply lost, and the calling
+  session must relaunch it from scratch. Not something to prevent from
+  inside a session; budget for at least one such retry on any plan with
+  many sequential subagent steps rather than assuming every launch
+  completes.
 - **2026-08-06** — `server`'s hermetic vitest suite (`pnpm exec vitest run
   --exclude '**/*.it.test.ts'`) crashes the whole run intermittently on Node
   v24.4.0 with `RangeError: Maximum call stack size exceeded` inside
@@ -244,6 +266,19 @@ _None yet._
 
 ## Open Questions
 
+- **2026-08-19** — `.claude/agents/planner.md` is the only project subagent
+  pinned to `model: opus` — every other write/read-capable agent
+  (`implementer`, `test-writer`, `doc-writer`, `architecture-reviewer`,
+  `researcher`) runs on `sonnet`. Never A/B-tested whether `planner`'s
+  output quality actually depends on the stronger model, especially when the
+  calling session hands it an already-researched, fact-dense prompt (as the
+  Intent Layer plan did) rather than leaving it to explore from scratch —
+  in that shape, `planner`'s job is closer to "structure known facts into a
+  Development Plan" than open-ended architectural reasoning. Tracked as task
+  "Evaluate planner subagent model: opus vs sonnet" (see harness task list).
+  Before downgrading, run the same rich-context prompt shape on `sonnet` for
+  one real feature and diff the resulting plans for missed constraints/
+  Owned-paths mistakes, not just prose quality.
 - **2026-08-18** — Intent Layer's `classifyIntent` (`reviewer-core/src/review/intent.ts`)
   only receives the changed-file list / diff-stat as a **fallback signal**,
   when there is no meaningful description/ticket/plan-ref
