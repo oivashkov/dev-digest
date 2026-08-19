@@ -18,6 +18,7 @@ import {
   ConfidenceNum,
   EmptyState,
   ErrorState,
+  Icon,
   Markdown,
   SectionLabel,
   Skeleton,
@@ -124,6 +125,23 @@ export function IntentCard({ prId }: { prId: string | null | undefined }) {
                   {intent.plan_refs.map((ref) => (
                     <li key={ref} className="mono" style={s.refItem}>
                       {ref}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {intent.scope_drift.length > 0 && (
+              <div style={s.scopeDrift}>
+                <div style={s.scopeDriftTitle}>
+                  <Icon.AlertTriangle size={13} />
+                  {t("intent.scopeDrift.title")}
+                </div>
+                <div style={s.scopeDriftHint}>{t("intent.scopeDrift.hint")}</div>
+                <ul style={s.scopeDriftList}>
+                  {intent.scope_drift.map((hit) => (
+                    <li key={hit.file} className="mono" style={s.scopeDriftItem}>
+                      {t("intent.scopeDrift.item", { file: hit.file, phrase: hit.matched_phrase })}
                     </li>
                   ))}
                 </ul>

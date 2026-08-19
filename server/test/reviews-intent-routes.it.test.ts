@@ -143,6 +143,49 @@ d('Reviews: PR intent routes (Testcontainers pg)', () => {
     await app.close();
   });
 
+  it('scope_drift is computed fresh from the current file list, independent of the cached intent (docs/plans/intent-scope-drift.md §3)', async () => {
+    const scopedIntent = {
+      intent: 'Add rate limiting to protect the payments API from abuse.',
+      in_scope: ['Add a token-bucket limiter middleware'],
+      out_of_scope: ['auth flow'],
+    };
+    const llm = new MockLLMProvider('openai', { structured: scopedIntent });
+    const app = await appWith(llm);
+    await pointReviewIntentAtMockOpenAi(app);
+    const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, {
+      body: 'Adds a token-bucket rate limiter in front of the payments API.',
+    });
+
+    const first = await app.inject({ method: 'GET', url: `/pulls/${pr.id}/intent` });
+    expect(first.statusCode).toBe(200);
+    // No changed files persisted yet — nothing to flag.
+    expect(first.json().scope_drift).toEqual([]);
+    const callsAfterFirst = llm.calls.filter((c) => c.method === 'completeStructured').length;
+
+    // A file lands (e.g. a new push) after the intent was already cached —
+    // no manual Refresh is triggered.
+    await pg.handle.db.insert(t.prFiles).values({
+      prId: pr.id,
+      path: 'src/api/auth/login.ts',
+      additions: 5,
+      deletions: 0,
+      patch: '@@ -1,1 +1,5 @@\n+// auth change',
+    });
+
+    const second = await app.inject({ method: 'GET', url: `/pulls/${pr.id}/intent` });
+    expect(second.statusCode).toBe(200);
+    // The cached intent itself did NOT recompute (no new LLM call)...
+    expect(second.json().intent).toBe(first.json().intent);
+    expect(llm.calls.filter((c) => c.method === 'completeStructured').length).toBe(callsAfterFirst);
+    // ...but scope_drift reflects the newly-added file against the
+    // already-cached out_of_scope list.
+    expect(second.json().scope_drift).toEqual([
+      { file: 'src/api/auth/login.ts', matched_phrase: 'auth flow' },
+    ]);
+
+    await app.close();
+  });
+
   it('GET on a PR with no signals still returns a low-confidence, inferred record', async () => {
     const llm = new MockLLMProvider('openai', { structured: INTENT_FIXTURE });
     const app = await appWith(llm);

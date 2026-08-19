@@ -1,5 +1,5 @@
 import { resolve, sep } from 'node:path';
-import type { Intent } from '@devdigest/shared';
+import type { Intent, ScopeDriftHit } from '@devdigest/shared';
 import { classifyIntent, type IntentTicketInput, type PlanExcerptInput } from '@devdigest/reviewer-core';
 import type { Container } from '../../platform/container.js';
 import type { RunLogger } from '../../platform/run-logger.js';
@@ -102,12 +102,110 @@ export interface TierSignals {
 export function tierFor(signals: TierSignals): { confidence: number; source: Intent['source'] } {
   if (signals.hasResolvedPlanRef) return { confidence: 0.9, source: 'spec' };
   if (signals.hasTicketBody) return { confidence: 0.9, source: 'ticket' };
-  if (signals.hasDescription) return { confidence: 0.6, source: 'description' };
+  // 0.7, not the band's midpoint (0.6) — still inside the documented ~0.55–0.7
+  // medium range (docs/plans/intent-layer.md, "Архітектурні рішення" point 1),
+  // but picked specifically to clear `ConfidenceNum`'s amber threshold
+  // (>=65%, `client/src/vendor/ui/primitives/ConfidenceNum.tsx`). At 0.6 this
+  // tier rendered in the SAME muted-gray as the 0.25 "inferred" tier —
+  // visually indistinguishable despite being a materially different signal
+  // strength. `ConfidenceNum` is vendored (do not touch), so the fix lives on
+  // the data side. See docs/plans/intent-scope-drift.md §2.
+  if (signals.hasDescription) return { confidence: 0.7, source: 'description' };
   return { confidence: 0.25, source: 'inferred' };
 }
 
 function isMeaningfulText(text: string | undefined): boolean {
   return !!text && text.trim().length > MEANINGFUL_TEXT_MIN_CHARS;
+}
+
+// ---------------------------------------------------------------------------
+// Scope drift (deterministic, advisory — no LLM call, never escalates a
+// finding's severity). See docs/plans/intent-scope-drift.md.
+//
+// A PR's `out_of_scope` list is the model's claim about what it did NOT
+// touch. This checks that claim against the PR's ACTUAL changed-file paths
+// with plain lexical overlap — no semantic understanding, deliberately. The
+// academic prior art this follows (ARCTIC, arXiv:2607.29516 — backtranslate
+// diff → NL summary, compare to intent, ordinal drift score) found strong
+// agreement with human raters on clear-cut cases but weak agreement in the
+// ambiguous middle ("moderate drift") — exactly the case a cleverer, more
+// confident heuristic would be most tempted to overreach on. A crude,
+// transparent, false-negative-biased match is the safer default for a
+// signal that's advisory-only and has no LLM grounding check behind it
+// (unlike `Finding`, which does — see reviewer-core's `groundFindings()`).
+// ---------------------------------------------------------------------------
+
+/** Path/phrase tokens shorter than this are too generic to mean anything
+ *  ("id", "ts", "js") — dropped before matching. */
+const SCOPE_DRIFT_MIN_TOKEN_LEN = 4;
+
+/** Structural path segments common enough to false-positive-match almost any
+ *  phrase containing the equivalent English word ("the index page", "shared
+ *  logic") — dropped from the file-path token set, never from the phrase's. */
+const SCOPE_DRIFT_STRUCTURAL_TOKENS = new Set([
+  'index', 'main', 'app', 'src', 'lib', 'core', 'util', 'utils', 'helper',
+  'helpers', 'common', 'shared', 'component', 'components', 'test', 'tests',
+  'spec', 'specs', 'type', 'types', 'const', 'constants',
+]);
+
+/** Cap on how many hits `computeScopeDrift` returns — a pathological
+ *  out_of_scope list (many short, generic phrases) against a large changed-
+ *  file set could otherwise produce a wall of low-value advisory noise. */
+const MAX_SCOPE_DRIFT_HITS = 15;
+
+/** Splits on any non-alphanumeric boundary AND on camelCase boundaries
+ *  ("webhookHandler" → "webhook", "Handler"), lowercases, drops empties. */
+function tokenize(text: string): string[] {
+  return text
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^a-zA-Z0-9]+/)
+    .map((t) => t.toLowerCase())
+    .filter((t) => t.length > 0);
+}
+
+function pathTokens(path: string): Set<string> {
+  return new Set(
+    tokenize(path).filter(
+      (t) => t.length >= SCOPE_DRIFT_MIN_TOKEN_LEN && !SCOPE_DRIFT_STRUCTURAL_TOKENS.has(t),
+    ),
+  );
+}
+
+function phraseTokens(phrase: string): Set<string> {
+  return new Set(tokenize(phrase).filter((t) => t.length >= SCOPE_DRIFT_MIN_TOKEN_LEN));
+}
+
+/**
+ * One advisory hit per changed file whose path tokens overlap an
+ * `out_of_scope` phrase's tokens — first matching phrase wins per file (a
+ * file matching multiple phrases only needs one advisory note, not a list).
+ * Pure, no I/O; capped at `MAX_SCOPE_DRIFT_HITS`, original file order
+ * preserved. Empty `outOfScope`/`files` → `[]`, never throws.
+ */
+export function computeScopeDrift(
+  files: { path: string }[],
+  outOfScope: string[],
+): ScopeDriftHit[] {
+  if (files.length === 0 || outOfScope.length === 0) return [];
+
+  const phrases = outOfScope
+    .map((phrase) => ({ phrase, tokens: phraseTokens(phrase) }))
+    .filter((p) => p.tokens.size > 0);
+  if (phrases.length === 0) return [];
+
+  const hits: ScopeDriftHit[] = [];
+  for (const file of files) {
+    if (hits.length >= MAX_SCOPE_DRIFT_HITS) break;
+    const fileTokens = pathTokens(file.path);
+    if (fileTokens.size === 0) continue;
+
+    const match = phrases.find((p) => {
+      for (const t of p.tokens) if (fileTokens.has(t)) return true;
+      return false;
+    });
+    if (match) hits.push({ file: file.path, matched_phrase: match.phrase });
+  }
+  return hits;
 }
 
 // ---------------------------------------------------------------------------

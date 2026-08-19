@@ -170,6 +170,34 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-19** — When a follow-up needs to add a field to what a route
+  returns but the underlying value is CACHED/persisted (like `Intent` on
+  `pr_intent`), extend the **transport** type (`PrIntentRecord` in
+  `review-api.ts`), not the **persisted** type (`Intent` in `brief.ts`) —
+  if the new field doesn't need to be cached (e.g. it's cheap/deterministic
+  and depends on data that can change independently, like `scope_drift`
+  depending on the PR's current file list rather than the cached intent
+  text), computing it at the service layer and merging it into the
+  transport object avoids the `.default([])`-breaks-hand-built-literals trap
+  (2026-08-18 entry below) entirely — `pull.repo.ts`'s `getIntent()`
+  literal never needs to change. `server/src/modules/reviews/service.ts`
+  (`getOrComputeIntent`), `server/src/vendor/shared/contracts/review-api.ts`
+  (`PrIntentRecord`).
+- **2026-08-19** — `ConfidenceNum` (`client/src/vendor/ui/primitives/ConfidenceNum.tsx`)
+  hardcodes its own color thresholds (green ≥85%, amber ≥65%, else muted) —
+  it has NO knowledge of `tierFor()`'s actual confidence values
+  (`server/src/modules/reviews/intent.ts`). The two drifted: `tierFor()`'s
+  medium tier was `0.6` (60%), which fell BELOW `ConfidenceNum`'s amber
+  threshold and rendered in the same muted-gray as the low/"inferred" tier
+  — visually indistinguishable despite being a materially different signal.
+  `ConfidenceNum` is vendored (`client/src/vendor/ui/**`, "do not touch" per
+  `AGENTS.md`) so the fix has to live on the data side — moved the medium
+  tier to `0.7`, still inside the already-documented ~0.55–0.7 band
+  (`docs/plans/intent-layer.md`), but picked specifically to clear the
+  component's threshold. **Any future change to `tierFor()`'s confidence
+  values must be checked against `ConfidenceNum`'s hardcoded 65%/85%
+  boundaries** — there's no compiler/test link between the two, only this
+  note. `docs/plans/intent-scope-drift.md` §2.
 - **2026-08-19** — `buildSmartDiff` (`src/modules/reviews/smart-diff.ts`) never
   sees a finding's `dismissedAt` at all — its `SmartDiffFindingInput` type is
   only `{file, start_line, end_line}`. Dismissed-finding exclusion happens one

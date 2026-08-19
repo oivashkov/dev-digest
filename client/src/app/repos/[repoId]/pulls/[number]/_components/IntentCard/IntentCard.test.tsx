@@ -42,6 +42,7 @@ const INTENT: PrIntentRecord = {
   confidence: 0.87,
   source: "spec",
   plan_refs: ["docs/plans/retry-fix.md"],
+  scope_drift: [],
 };
 
 describe("IntentCard (smoke)", () => {
@@ -64,6 +65,29 @@ describe("IntentCard (smoke)", () => {
     expect(screen.getByText("87% conf")).toBeInTheDocument();
     expect(screen.getByText("from spec")).toBeInTheDocument();
     expect(screen.getByText("docs/plans/retry-fix.md")).toBeInTheDocument();
+    // No scope_drift on this fixture — the advisory block must not render.
+    expect(screen.queryByText("Possibly out of scope")).not.toBeInTheDocument();
+  });
+
+  it("renders the advisory scope-drift block when a changed file overlaps an out_of_scope phrase", () => {
+    useRefreshPrIntentMock.mockReturnValue({ mutate: refreshMutateMock, isPending: false });
+    usePrIntentMock.mockReturnValue({
+      data: {
+        ...INTENT,
+        scope_drift: [{ file: "src/api/auth/login.ts", matched_phrase: "auth flow" }],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderWithIntl(<IntentCard prId="pr1" />);
+
+    expect(screen.getByText("Possibly out of scope")).toBeInTheDocument();
+    expect(
+      screen.getByText('src/api/auth/login.ts — matches “auth flow”'),
+    ).toBeInTheDocument();
   });
 
   it("renders an empty state when the intent hasn't been (successfully) computed yet", () => {
