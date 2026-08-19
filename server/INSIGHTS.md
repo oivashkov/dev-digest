@@ -157,6 +157,40 @@ _None yet._
   `OPENROUTER_API_KEY` present): `vitest run .it.test` green twice in a row,
   67/67, including the previously-flaky "dual-provider structured output" and
   "finding actions: accept, dismiss" tests.
+  **Correction, 2026-08-19: the diagnosis above was incomplete — the mock
+  fix was necessary but not sufficient, and CI (`server-integration.yml`)
+  has NO API keys at all, ruling out "real network call" as CI's failure
+  mode.** `test/skills-prompt-wiring.it.test.ts` still failed ~1-in-3 runs
+  locally even with the `openrouter` mock in place (`Cannot read properties
+  of undefined (reading 'skills')` at `trace.prompt_assembly.skills` — same
+  symptom, and it also failed this way in a real GitHub Actions run). Root
+  cause: a genuine ordering race in `ReviewRunExecutor.executeRuns`
+  (`run-executor.ts`), independent of any LLM provider being real or
+  mocked. `completeAgentRun(runId, { status: 'done', ... })` ran INSIDE the
+  `withTransaction` block that also inserts the review/findings — meaning
+  the transaction commit (making `agent_runs.status = 'done'` visible to
+  any concurrent reader) happened BEFORE `saveRunTrace(runId, trace)`,
+  which only runs afterward, outside that transaction. `waitForPrRuns`
+  (`test/helpers/runs.ts`) polls ONLY `agent_runs.status` — nothing waits
+  for the trace document itself. So there was a real (if narrow, ~ms-scale)
+  window where a poller sees a terminal status while `GET /runs/:id/trace`
+  still 404s (no trace row yet) — the `NotFoundError` response body has no
+  `prompt_assembly` key, hence the exact `undefined.skills` crash the test
+  reports. The SAME ordering bug existed in the catch-block (failed/
+  cancelled path) and in `failAll` (pre-work failure) — `completeAgentRun`
+  before `saveRunTrace` in both. **Fixed**: reordered all three paths so
+  `saveRunTrace` always runs before `completeAgentRun` — "done"/"failed"/
+  "cancelled" now only becomes observable once the trace is durably
+  persisted. Verified: 8/8 standalone runs of the previously-flaky file
+  green (was ~2/3), plus the full hermetic (191/191) and `.it.test`
+  (71/71) suites. **Lesson: a test flake that "goes away" after mocking
+  more of the environment isn't proof the mock was the actual root
+  cause** — it can just make a real race condition's window bigger or
+  smaller (a real network call vs. a fast mock call shifts *when* the
+  race is likely to trigger, without removing the race itself). Confirm a
+  fix by reproducing the failure BEFORE the change and demonstrating it's
+  gone after, not by trusting a plausible-sounding mechanism.
+  `server/src/modules/reviews/run-executor.ts`.
 
 - **2026-08-10** — The 2026-07-31 schema-first decision above claims every
   route declares a `response` schema alongside `params`/`body` — in practice
