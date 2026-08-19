@@ -13,6 +13,7 @@ import {
   isAllowedPlanRefShape,
   isWithinClone,
   isSafePlanRefPath,
+  computeScopeDrift,
 } from '../src/modules/reviews/intent.js';
 import type { Container } from '../src/platform/container.js';
 import type { Intent } from '@devdigest/shared';
@@ -34,16 +35,80 @@ describe('tierFor', () => {
     ).toEqual({ confidence: 0.9, source: 'ticket' });
   });
 
-  it('is medium (0.6, source=description) with only a meaningful description', () => {
+  it('is medium (0.7, source=description) with only a meaningful description', () => {
     expect(
       tierFor({ hasResolvedPlanRef: false, hasTicketBody: false, hasDescription: true }),
-    ).toEqual({ confidence: 0.6, source: 'description' });
+    ).toEqual({ confidence: 0.7, source: 'description' });
   });
 
   it('is low (0.25, source=inferred) with no signals at all', () => {
     expect(
       tierFor({ hasResolvedPlanRef: false, hasTicketBody: false, hasDescription: false }),
     ).toEqual({ confidence: 0.25, source: 'inferred' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeScopeDrift — deterministic, advisory (docs/plans/intent-scope-drift.md)
+// ---------------------------------------------------------------------------
+
+describe('computeScopeDrift', () => {
+  it('flags a file whose path token overlaps an out_of_scope phrase', () => {
+    expect(
+      computeScopeDrift(
+        [{ path: 'src/api/auth/login.ts' }, { path: 'src/middleware/ratelimit.ts' }],
+        ['auth flow'],
+      ),
+    ).toEqual([{ file: 'src/api/auth/login.ts', matched_phrase: 'auth flow' }]);
+  });
+
+  it('is case-insensitive and matches across camelCase/path/extension boundaries', () => {
+    expect(
+      computeScopeDrift([{ path: 'src/webhookHandler.ts' }], ['Webhook payload validation']),
+    ).toEqual([{ file: 'src/webhookHandler.ts', matched_phrase: 'Webhook payload validation' }]);
+  });
+
+  it('does not flag a file with no token overlap', () => {
+    expect(
+      computeScopeDrift([{ path: 'src/middleware/ratelimit.ts' }], ['auth flow']),
+    ).toEqual([]);
+  });
+
+  it('ignores generic/structural path segments (index, utils, ...) as false-positive bait', () => {
+    // "index" alone would otherwise match a phrase like "the index page" for
+    // almost any repo's src/index.ts — dropped from the file-token set.
+    expect(
+      computeScopeDrift([{ path: 'src/index.ts' }], ['redesign the index page']),
+    ).toEqual([]);
+  });
+
+  it('ignores tokens shorter than the minimum length (avoids matching on noise like "ts"/"id")', () => {
+    expect(computeScopeDrift([{ path: 'src/id.ts' }], ['user id lookup'])).toEqual([]);
+  });
+
+  it('returns [] when out_of_scope is empty, without matching everything by default', () => {
+    expect(computeScopeDrift([{ path: 'src/api/auth/login.ts' }], [])).toEqual([]);
+  });
+
+  it('returns [] when there are no changed files', () => {
+    expect(computeScopeDrift([], ['auth flow'])).toEqual([]);
+  });
+
+  it('reports at most one hit per file — the first matching phrase, not every match', () => {
+    expect(
+      computeScopeDrift(
+        [{ path: 'src/api/auth/webhook.ts' }],
+        ['auth flow', 'webhook delivery'],
+      ),
+    ).toEqual([{ file: 'src/api/auth/webhook.ts', matched_phrase: 'auth flow' }]);
+  });
+
+  it('preserves original file order and caps at 15 hits', () => {
+    const files = Array.from({ length: 20 }, (_, i) => ({ path: `src/auth/file${i}.ts` }));
+    const hits = computeScopeDrift(files, ['auth flow']);
+    expect(hits).toHaveLength(15);
+    expect(hits[0]).toEqual({ file: 'src/auth/file0.ts', matched_phrase: 'auth flow' });
+    expect(hits[14]).toEqual({ file: 'src/auth/file14.ts', matched_phrase: 'auth flow' });
   });
 });
 
@@ -164,7 +229,7 @@ describe('getOrComputeIntent', () => {
     expect(result?.intent).toBe('Simplify retry logic');
     // No plan ref / ticket resolved in this fixture, but the description is
     // meaningful (> 40 chars) → medium tier.
-    expect(result?.confidence).toBe(0.6);
+    expect(result?.confidence).toBe(0.7);
     expect(result?.source).toBe('description');
     expect(upsertIntent).toHaveBeenCalledWith('pr-1', expect.objectContaining({ source: 'description' }));
   });

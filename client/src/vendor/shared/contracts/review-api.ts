@@ -56,8 +56,35 @@ export const ReviewRunResponse = z.object({
 });
 export type ReviewRunResponse = z.infer<typeof ReviewRunResponse>;
 
-/** Intent persisted for a PR (the Intent plus the pr_id it scopes). */
-export const PrIntentRecord = Intent.extend({ pr_id: z.string() });
+/**
+ * One deterministic, advisory hit: a changed file whose path lexically
+ * overlaps a phrase from the PR's own stated `out_of_scope` list — i.e. the
+ * PR claims not to touch this area, but a changed file's path suggests it
+ * might. String-matching only, no LLM call, no semantic understanding —
+ * intentionally crude (see docs/plans/intent-scope-drift.md §2 for why: the
+ * academic prior art this followed found accuracy weakest in exactly the
+ * "subtle, ambiguous" middle ground a cleverer heuristic would chase). Never
+ * escalates a finding's severity — advisory only, surfaced to the reviewer.
+ */
+export const ScopeDriftHit = z.object({
+  file: z.string(),
+  matched_phrase: z.string(),
+});
+export type ScopeDriftHit = z.infer<typeof ScopeDriftHit>;
+
+/**
+ * Intent persisted for a PR (the Intent plus the pr_id it scopes), plus
+ * `scope_drift` — computed fresh from the PR's CURRENT changed-file list on
+ * every read, never persisted on `pr_intent`. Unlike the rest of `Intent`
+ * (cached until a manual Refresh), this stays live even against a stale
+ * cached intent, since it only depends on `out_of_scope` (already cached)
+ * and the file list (which can change without anyone re-running the
+ * classifier).
+ */
+export const PrIntentRecord = Intent.extend({
+  pr_id: z.string(),
+  scope_drift: z.array(ScopeDriftHit).default([]),
+});
 export type PrIntentRecord = z.infer<typeof PrIntentRecord>;
 
 /** Smart-diff response for a PR (the SmartDiff). */

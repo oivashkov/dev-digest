@@ -7,7 +7,7 @@ import { type ReviewDto, type ReviewDtoFinding } from './helpers.js';
 import { ReviewRunExecutor, type Logger } from './run-executor.js';
 import { actOnFinding as actOnFindingImpl } from './findings.js';
 import { reviewToDto } from './helpers.js';
-import { getOrComputeIntent as getOrComputeIntentImpl } from './intent.js';
+import { getOrComputeIntent as getOrComputeIntentImpl, computeScopeDrift } from './intent.js';
 import { buildSmartDiff } from './smart-diff.js';
 
 // Re-export DTO types + converters for backward-compatible imports from
@@ -189,10 +189,17 @@ export class ReviewService {
    * PR + repo the same way `runReview` does, then delegates all
    * signal-gathering/tiering/caching to the shared `getOrComputeIntent`
    * (`./intent.js`) — this method's only job is workspace-scoped lookup +
-   * shaping the `PrIntentRecord` response (`Intent` + `pr_id`). Throws
-   * `NotFoundError` when the PR doesn't exist OR when computation couldn't
-   * produce a result (no cache and the fresh compute degraded to
-   * `undefined`) — both map to a 404 via the shared error handler.
+   * shaping the `PrIntentRecord` response (`Intent` + `pr_id` +
+   * `scope_drift`). Throws `NotFoundError` when the PR doesn't exist OR when
+   * computation couldn't produce a result (no cache and the fresh compute
+   * degraded to `undefined`) — both map to a 404 via the shared error
+   * handler.
+   *
+   * `scope_drift` is deliberately NOT part of the cached `Intent`/`pr_intent`
+   * — it's recomputed fresh from the PR's CURRENT changed-file list on every
+   * call (cheap, deterministic, no LLM), so it stays live even when the
+   * cached `intent`/`out_of_scope` itself is stale. See
+   * docs/plans/intent-scope-drift.md §3.
    */
   async getOrComputeIntent(
     workspaceId: string,
@@ -208,7 +215,13 @@ export class ReviewService {
     const intent = await getOrComputeIntentImpl(this.container, workspaceId, repo, pull, opts, log);
     if (!intent) throw new NotFoundError('PR intent not available');
 
-    return { ...intent, pr_id: prId };
+    const files = await this.repo.getPrFiles(prId);
+    const scopeDrift = computeScopeDrift(
+      files.map((f) => ({ path: f.path })),
+      intent.out_of_scope,
+    );
+
+    return { ...intent, pr_id: prId, scope_drift: scopeDrift };
   }
 
   // ===========================================================================
