@@ -1,5 +1,5 @@
 import type { Container } from '../../platform/container.js';
-import type { FindingActionKind, RunEventKind, RunTrace } from '@devdigest/shared';
+import type { FindingActionKind, PrIntentRecord, RunEventKind, RunTrace, SmartDiff } from '@devdigest/shared';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import type { AgentRow } from '../../db/rows.js';
 import { ReviewRepository } from './repository.js';
@@ -7,6 +7,8 @@ import { type ReviewDto, type ReviewDtoFinding } from './helpers.js';
 import { ReviewRunExecutor, type Logger } from './run-executor.js';
 import { actOnFinding as actOnFindingImpl } from './findings.js';
 import { reviewToDto } from './helpers.js';
+import { getOrComputeIntent as getOrComputeIntentImpl, computeScopeDrift } from './intent.js';
+import { buildSmartDiff } from './smart-diff.js';
 
 // Re-export DTO types + converters for backward-compatible imports from
 // './service.js' (these previously lived here; logic now in ./helpers.ts).
@@ -175,5 +177,79 @@ export class ReviewService {
 
   async getRunTrace(runId: string): Promise<RunTrace | undefined> {
     return this.repo.getRunTrace(runId);
+  }
+
+  // ===========================================================================
+  // PR intent (Intent Layer, triggers A/B — lazy compute-if-missing + refresh)
+  // ===========================================================================
+
+  /**
+   * `GET /pulls/:id/intent` (opts.force=false) and `POST
+   * /pulls/:id/intent/refresh` (opts.force=true) both land here. Resolves the
+   * PR + repo the same way `runReview` does, then delegates all
+   * signal-gathering/tiering/caching to the shared `getOrComputeIntent`
+   * (`./intent.js`) — this method's only job is workspace-scoped lookup +
+   * shaping the `PrIntentRecord` response (`Intent` + `pr_id` +
+   * `scope_drift`). Throws `NotFoundError` when the PR doesn't exist OR when
+   * computation couldn't produce a result (no cache and the fresh compute
+   * degraded to `undefined`) — both map to a 404 via the shared error
+   * handler.
+   *
+   * `scope_drift` is deliberately NOT part of the cached `Intent`/`pr_intent`
+   * — it's recomputed fresh from the PR's CURRENT changed-file list on every
+   * call (cheap, deterministic, no LLM), so it stays live even when the
+   * cached `intent`/`out_of_scope` itself is stale. See
+   * docs/plans/intent-scope-drift.md §3.
+   */
+  async getOrComputeIntent(
+    workspaceId: string,
+    prId: string,
+    opts: { force: boolean },
+    log: Logger,
+  ): Promise<PrIntentRecord> {
+    const pull = await this.repo.getPull(workspaceId, prId);
+    if (!pull) throw new NotFoundError('Pull request not found');
+    const repo = await this.repo.getRepo(pull.repoId);
+    if (!repo) throw new NotFoundError('Repo not found');
+
+    const intent = await getOrComputeIntentImpl(this.container, workspaceId, repo, pull, opts, log);
+    if (!intent) throw new NotFoundError('PR intent not available');
+
+    const files = await this.repo.getPrFiles(prId);
+    const scopeDrift = computeScopeDrift(
+      files.map((f) => ({ path: f.path })),
+      intent.out_of_scope,
+    );
+
+    return { ...intent, pr_id: prId, scope_drift: scopeDrift };
+  }
+
+  // ===========================================================================
+  // SmartDiff (deterministic, no LLM — recomputed fresh on every call, no
+  // caching table; see `docs/plans/smart-diff.md` §3/§4)
+  // ===========================================================================
+
+  /**
+   * `GET /pulls/:id/smart-diff`. Workspace-scoped PR lookup (same pattern as
+   * `reviewsForPull`/`getOrComputeIntent`), then feeds the PR's changed files
+   * and the newest review's non-dismissed findings into the pure
+   * `buildSmartDiff` classifier. Always resolves — `groups` is empty only when
+   * the PR itself has no changed files; there is no compute-if-missing/404
+   * semantics like intent's, because this is a free, instant computation, not
+   * a cached LLM result.
+   */
+  async getSmartDiff(workspaceId: string, prId: string): Promise<SmartDiff> {
+    const pull = await this.repo.getPull(workspaceId, prId);
+    if (!pull) throw new NotFoundError('Pull request not found');
+
+    const files = await this.repo.getPrFiles(prId);
+    const reviews = await this.repo.reviewsForPull(prId);
+    const latestFindings = reviews[0]?.findings ?? [];
+    const findings = latestFindings.filter((f) => f.dismissedAt == null);
+
+    return buildSmartDiff(
+      files.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
+      findings.map((f) => ({ file: f.file, start_line: f.startLine, end_line: f.endLine })),
+    );
   }
 }

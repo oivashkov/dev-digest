@@ -1,5 +1,5 @@
 import type { Container } from '../../platform/container.js';
-import type { Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
+import type { Intent, Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
 import { reviewPullRequest, countBlockers } from '@devdigest/reviewer-core';
 import { RunLogger } from '../../platform/run-logger.js';
 import * as schema from '../../db/schema.js';
@@ -8,6 +8,7 @@ import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './reposit
 import { REVIEW_STRATEGY } from './constants.js';
 import { taskLine } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
+import { getOrComputeIntent } from './intent.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
 export class RunCancelledError extends Error {
@@ -74,6 +75,14 @@ export class ReviewRunExecutor {
     // mark the rows failed and persist the buffered log so it survives a reload.
     const failAll = async (msg: string) => {
       for (const { runId, agent } of jobs) {
+        // Trace saved BEFORE the status flips to a terminal value — see the
+        // matching note on the success/catch paths below. `waitForPrRuns`
+        // (and any other poller) only watches `agent_runs.status`; if status
+        // goes terminal first, a concurrent `GET /runs/:id/trace` can 404 in
+        // the gap before the trace document actually exists.
+        await this.repo
+          .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed'))
+          .catch(() => undefined);
         await this.repo
           .completeAgentRun(runId, {
             status: 'failed',
@@ -84,9 +93,6 @@ export class ReviewRunExecutor {
             grounding: '0/0 passed',
             error: msg,
           })
-          .catch(() => undefined);
-        await this.repo
-          .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed'))
           .catch(() => undefined);
         this.container.runBus.complete(runId);
       }
@@ -104,6 +110,14 @@ export class ReviewRunExecutor {
     }
     runLog.info(`Diff ready — ${diff.files.length} changed file(s); starting ${jobs.length} agent run(s)`);
 
+    // Intent Layer (trigger C) — reuse the persisted intent if one already
+    // exists (computed lazily when the PR detail page was first opened);
+    // compute inline, once for the whole batch, when it doesn't (e.g. review
+    // triggered via API without a prior detail-page open). Best-effort: never
+    // throws, degrades to `undefined` and the prompt simply omits the
+    // `## PR intent` section. See docs/plans/intent-layer.md §2.
+    const intent = await getOrComputeIntent(this.container, workspaceId, repo, pull, { force: false }, runLog);
+
     for (const { agent, runId } of jobs) {
       const agentStart = Date.now();
       logger?.info(
@@ -111,7 +125,7 @@ export class ReviewRunExecutor {
         `review: agent "${agent.name}" started (${agent.provider}/${agent.model})`,
       );
       try {
-        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog);
+        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, intent, agent, runId, runLog);
         logger?.info(
           {
             runId,
@@ -140,6 +154,7 @@ export class ReviewRunExecutor {
     pull: PullRow,
     repo: typeof schema.repos.$inferSelect,
     diff: UnifiedDiff,
+    intent: Intent | undefined,
     agent: AgentRow,
     runId: string,
     parentLog: RunLogger,
@@ -217,6 +232,9 @@ export class ReviewRunExecutor {
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),
+        // Intent Layer — derived PR intent/scope, same omit-when-empty
+        // contract. Computed once per batch above (this.container).
+        ...(intent ? { intent: intent.intent } : {}),
         task,
         sessionId: `${repo.owner}/${repo.name}#${pull.number}:${agent.name}`,
         onEvent: (e) => runLog.event(e.kind, e.msg, e.data),
@@ -233,11 +251,20 @@ export class ReviewRunExecutor {
       // the timeline colors on, NOT the model's self-reported verdict.
       const blockers = countBlockers(keptFindings, agent.ciFailOn);
 
-      // ---- Persist review + findings + observability, atomically ------------
-      // These four writes must succeed or fail together: a crash between
+      // ---- Persist review + findings, atomically ------------------------------
+      // These three writes must succeed or fail together: a crash between
       // insertReview and insertFindings would otherwise leave a persisted
       // review with zero findings — indistinguishable from a genuinely clean
       // result. See backend-onion-architecture skill, Tier 1 finding #9.
+      //
+      // `completeAgentRun` (the status flip to 'done') is deliberately NOT in
+      // this transaction — it happens further below, AFTER `saveRunTrace`.
+      // `waitForPrRuns` (and any UI poller) only watches `agent_runs.status`;
+      // if status went terminal here, before the trace document exists, a
+      // concurrent `GET /runs/:id/trace` could 404 in that gap (reproduced:
+      // server/INSIGHTS.md, this entry's date — `trace.prompt_assembly` reads
+      // as `undefined` on the caller). "done" must mean the trace is already
+      // readable, not just that the review row is.
       const { review, findingRows, durationMs } = await this.repo.withTransaction(async (repo) => {
         const review = await repo.insertReview({
           workspaceId,
@@ -257,19 +284,6 @@ export class ReviewRunExecutor {
         await repo.markReviewed(pull.id, pull.headSha);
 
         const durationMs = elapsed();
-        // ---- Observability: agent_runs + ONE run_traces document ------------
-        await repo.completeAgentRun(runId, {
-          status: 'done',
-          durationMs,
-          tokensIn,
-          tokensOut,
-          costUsd,
-          findingsCount: findingRows.length,
-          grounding,
-          score: outcome.review.score,
-          blockers,
-          error: null,
-        });
         return { review, findingRows, durationMs };
       });
       runLog.result(`Persisted review ${review.id} with ${findingRows.length} finding(s)`);
@@ -307,6 +321,23 @@ export class ReviewRunExecutor {
       };
       runLog.info('Run complete; trace persisted');
       await this.repo.saveRunTrace(runId, trace);
+
+      // Status flips to 'done' LAST, only now that the trace is durably
+      // persisted (see the note above `withTransaction`) — a poller that
+      // observes a terminal `agent_runs.status` is guaranteed
+      // `GET /runs/:id/trace` is already readable.
+      await this.repo.completeAgentRun(runId, {
+        status: 'done',
+        durationMs,
+        tokensIn,
+        tokensOut,
+        costUsd,
+        findingsCount: findingRows.length,
+        grounding,
+        score: outcome.review.score,
+        blockers,
+        error: null,
+      });
       this.container.runBus.complete(runId);
 
       return { review, findings: findingRows, grounding, raw: outcome.review };
@@ -317,6 +348,11 @@ export class ReviewRunExecutor {
       const status = cancelled ? 'cancelled' : 'failed';
       const msg = cancelled ? 'Cancelled by user' : (err as Error).message;
       runLog.error(cancelled ? 'Run cancelled by user' : `Run failed: ${msg}`);
+      // Trace saved BEFORE the status flip — same reasoning as the success
+      // path and `failAll` above.
+      await this.repo
+        .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed', Date.now() - start))
+        .catch(() => undefined);
       await this.repo
         .completeAgentRun(runId, {
           status,
@@ -327,9 +363,6 @@ export class ReviewRunExecutor {
           grounding: '0/0 passed',
           error: msg,
         })
-        .catch(() => undefined);
-      await this.repo
-        .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed', Date.now() - start))
         .catch(() => undefined);
       this.container.runBus.complete(runId);
       throw err;

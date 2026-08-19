@@ -15,5 +15,25 @@
     "blame": "blame",
     "noHistory": "No history available for this line.",
     "noCommits": "No commits found for this line."
+  },
+  "intent": {
+    "refresh": "Refresh",
+    "refreshTooltip": "Recompute this PR's intent",
+    "inScope": "In scope",
+    "outOfScope": "Out of scope",
+    "planRefs": "Referenced docs",
+    "source": {
+      "spec": "from spec",
+      "ticket": "from ticket",
+      "description": "from description",
+      "inferred": "inferred"
+    },
+    "errorTitle": "Couldn't load intent",
+    "errorBody": "Something went wrong computing this PR's intent.",
+    "scopeDrift": {
+      "title": "Possibly out of scope",
+      "hint": "These changed files overlap something the PR itself says is out of scope — a lightweight path/phrase match, not a finding. Worth a second look, not a blocker.",
+      "item": "{file} — matches “{phrase}”"
+    }
   }
 }

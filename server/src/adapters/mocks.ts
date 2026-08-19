@@ -57,11 +57,11 @@ export interface MockLLMOptions {
 }
 
 export class MockLLMProvider implements LLMProvider {
-  readonly id: 'openai' | 'anthropic';
+  readonly id: 'openai' | 'anthropic' | 'openrouter';
   public calls: { method: string; req: unknown }[] = [];
 
   constructor(
-    id: 'openai' | 'anthropic' = 'openai',
+    id: 'openai' | 'anthropic' | 'openrouter' = 'openai',
     private opts: MockLLMOptions = {},
   ) {
     this.id = id;

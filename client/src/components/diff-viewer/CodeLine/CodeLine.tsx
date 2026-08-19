@@ -14,14 +14,34 @@ export function CodeLine({
   path,
   threads,
   commenting,
+  highlighted,
+  scrollTarget,
+  scrollNonce,
 }: {
   ln: Line;
   path: string;
   threads: CommentThread[];
   commenting?: DiffCommentApi;
+  /** True when this line matches the parent's `highlightLines` set (e.g. a
+   *  finding's anchor line) — renders with a warn-tinted background instead
+   *  of the usual add/del/ctx tint. */
+  highlighted?: boolean;
+  /** True when this line is the current scroll target (its displayed gutter
+   *  number matches the parent's `scrollToLine`). Combined with `scrollNonce`
+   *  so a repeat click on the same target re-triggers the scroll — same
+   *  target/nonce pattern as `FindingsTab.tsx`/`ReviewRunAccordion.tsx`. */
+  scrollTarget?: boolean;
+  scrollNonce?: number;
 }) {
   const [hover, setHover] = React.useState(false);
   const [composing, setComposing] = React.useState(false);
+  const rowRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (scrollTarget) {
+      rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [scrollTarget, scrollNonce]);
 
   if (ln.kind === "hunk") {
     return (
@@ -37,11 +57,12 @@ export function CodeLine({
 
   return (
     <div
+      ref={rowRef}
       style={cs.rowWrap}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <div style={lineRowFor(ln.kind)}>
+      <div style={lineRowFor(ln.kind, highlighted)}>
         <span className="mono tnum" style={{ ...s.lineNo, position: "relative" }}>
           {showAdd && target && (
             <button

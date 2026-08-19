@@ -109,6 +109,89 @@ _None yet._
 
 ## What Doesn't Work
 
+- **2026-08-18** — Any `*.it.test.ts` that POSTs `/pulls/:id/review` and only
+  overrides `llm.openai` (the near-universal pattern —
+  `overrides: { llm: { openai: MockLLMProvider } }`) is NOT actually
+  hermetic on a machine with a real `OPENROUTER_API_KEY` configured in
+  `~/.devdigest/secrets.json`: `ReviewRunExecutor.executeRuns` now calls
+  `getOrComputeIntent` (Intent Layer, `intent.ts`) once per batch, BEFORE
+  the per-agent loop, and that resolves its model via
+  `resolveFeatureModel(..., 'review_intent')` → registry default
+  `openrouter/deepseek-v4-flash` — a provider these fixtures never mock. With
+  no key configured this degrades via `ConfigError` in milliseconds (correct,
+  by design); with a real key present it makes a genuine OpenRouter call
+  (verified: `curl https://openrouter.ai/api/v1/models` returns `200` in
+  ~250ms from this sandbox, and the classify call itself took 2–10s across
+  runs), which intermittently exceeds `test/helpers/runs.ts`'s
+  `waitForPrRuns` 10s poll window and fails assertions on
+  `trace.prompt_assembly` with `Cannot read properties of undefined`. Caused
+  2/3 tests in `test/skills-prompt-wiring.it.test.ts` to fail on THIS machine
+  only — the hermetic suite (`vitest run --exclude '**/*.it.test.ts'`) is
+  unaffected and green. Not fixed here (Step 4's Owned paths are
+  `reviews/intent.ts` + `reviews/run-executor.ts` only, not `test/`); a
+  follow-up should either have `IntentClassificationInput` accept a short
+  `timeoutMs` (reviewer-core's `intent.ts`, currently unbounded — inherits
+  the OpenRouter adapter's 90s default) or have it.test fixtures that hit
+  `/pulls/:id/review` also stub `llm.openrouter`. **Confirmed 2026-08-18
+  (Step 5)** the same flake also fails `test/reviews.it.test.ts`'s
+  `"runs a review: map-reduce..."` test on this machine (`expected [] to have
+  a length of 1 but got +0`), reproducible standalone with `vitest run
+  test/reviews.it.test.ts -t map-reduce`, confirming it's environmental
+  (real `OPENROUTER_API_KEY` present) and not specific to the skills-wiring
+  file. The workaround used for the new `test/reviews-intent-routes.it.test.ts`
+  (which hits `GET/POST /pulls/:id/intent*` directly, so it can't dodge
+  `review_intent`'s resolution the way `/pulls/:id/review` fixtures can by
+  just not mentioning it): `PUT /settings` with `{ feature_models:
+  { review_intent: { provider: 'openai', model: '...' } } }` before exercising
+  the route, so `resolveFeatureModel` picks the already-mocked `openai`
+  provider instead of the registry's `openrouter` default — same fix shape as
+  the suggested "stub `llm.openrouter`" follow-up, but via the workspace
+  override path instead of adding a new mock override. **Fixed 2026-08-18**:
+  `MockLLMProvider`'s `id` widened to accept `'openrouter'`
+  (`src/adapters/mocks.ts`), and `test/reviews.it.test.ts` +
+  `test/skills-prompt-wiring.it.test.ts`'s `appWith()` helpers now always add
+  an `openrouter: new MockLLMProvider('openrouter', { structuredBySchema: {
+  IntentExtraction: {...} } })` entry alongside the review-model mock — no
+  `resolveFeatureModel`/settings override needed since the mock now exists for
+  whichever provider the registry resolves to. Verified on this machine (real
+  `OPENROUTER_API_KEY` present): `vitest run .it.test` green twice in a row,
+  67/67, including the previously-flaky "dual-provider structured output" and
+  "finding actions: accept, dismiss" tests.
+  **Correction, 2026-08-19: the diagnosis above was incomplete — the mock
+  fix was necessary but not sufficient, and CI (`server-integration.yml`)
+  has NO API keys at all, ruling out "real network call" as CI's failure
+  mode.** `test/skills-prompt-wiring.it.test.ts` still failed ~1-in-3 runs
+  locally even with the `openrouter` mock in place (`Cannot read properties
+  of undefined (reading 'skills')` at `trace.prompt_assembly.skills` — same
+  symptom, and it also failed this way in a real GitHub Actions run). Root
+  cause: a genuine ordering race in `ReviewRunExecutor.executeRuns`
+  (`run-executor.ts`), independent of any LLM provider being real or
+  mocked. `completeAgentRun(runId, { status: 'done', ... })` ran INSIDE the
+  `withTransaction` block that also inserts the review/findings — meaning
+  the transaction commit (making `agent_runs.status = 'done'` visible to
+  any concurrent reader) happened BEFORE `saveRunTrace(runId, trace)`,
+  which only runs afterward, outside that transaction. `waitForPrRuns`
+  (`test/helpers/runs.ts`) polls ONLY `agent_runs.status` — nothing waits
+  for the trace document itself. So there was a real (if narrow, ~ms-scale)
+  window where a poller sees a terminal status while `GET /runs/:id/trace`
+  still 404s (no trace row yet) — the `NotFoundError` response body has no
+  `prompt_assembly` key, hence the exact `undefined.skills` crash the test
+  reports. The SAME ordering bug existed in the catch-block (failed/
+  cancelled path) and in `failAll` (pre-work failure) — `completeAgentRun`
+  before `saveRunTrace` in both. **Fixed**: reordered all three paths so
+  `saveRunTrace` always runs before `completeAgentRun` — "done"/"failed"/
+  "cancelled" now only becomes observable once the trace is durably
+  persisted. Verified: 8/8 standalone runs of the previously-flaky file
+  green (was ~2/3), plus the full hermetic (191/191) and `.it.test`
+  (71/71) suites. **Lesson: a test flake that "goes away" after mocking
+  more of the environment isn't proof the mock was the actual root
+  cause** — it can just make a real race condition's window bigger or
+  smaller (a real network call vs. a fast mock call shifts *when* the
+  race is likely to trigger, without removing the race itself). Confirm a
+  fix by reproducing the failure BEFORE the change and demonstrating it's
+  gone after, not by trusting a plausible-sounding mechanism.
+  `server/src/modules/reviews/run-executor.ts`.
+
 - **2026-08-10** — The 2026-07-31 schema-first decision above claims every
   route declares a `response` schema alongside `params`/`body` — in practice
   none do (`grep -c "response:" src/modules/*/routes.ts` → 0 everywhere).
@@ -120,6 +203,89 @@ _None yet._
   fixes. `src/modules/*/routes.ts`
 
 ## Codebase Patterns
+
+- **2026-08-19** — When a follow-up needs to add a field to what a route
+  returns but the underlying value is CACHED/persisted (like `Intent` on
+  `pr_intent`), extend the **transport** type (`PrIntentRecord` in
+  `review-api.ts`), not the **persisted** type (`Intent` in `brief.ts`) —
+  if the new field doesn't need to be cached (e.g. it's cheap/deterministic
+  and depends on data that can change independently, like `scope_drift`
+  depending on the PR's current file list rather than the cached intent
+  text), computing it at the service layer and merging it into the
+  transport object avoids the `.default([])`-breaks-hand-built-literals trap
+  (2026-08-18 entry below) entirely — `pull.repo.ts`'s `getIntent()`
+  literal never needs to change. `server/src/modules/reviews/service.ts`
+  (`getOrComputeIntent`), `server/src/vendor/shared/contracts/review-api.ts`
+  (`PrIntentRecord`).
+- **2026-08-19** — `ConfidenceNum` (`client/src/vendor/ui/primitives/ConfidenceNum.tsx`)
+  hardcodes its own color thresholds (green ≥85%, amber ≥65%, else muted) —
+  it has NO knowledge of `tierFor()`'s actual confidence values
+  (`server/src/modules/reviews/intent.ts`). The two drifted: `tierFor()`'s
+  medium tier was `0.6` (60%), which fell BELOW `ConfidenceNum`'s amber
+  threshold and rendered in the same muted-gray as the low/"inferred" tier
+  — visually indistinguishable despite being a materially different signal.
+  `ConfidenceNum` is vendored (`client/src/vendor/ui/**`, "do not touch" per
+  `AGENTS.md`) so the fix has to live on the data side — moved the medium
+  tier to `0.7`, still inside the already-documented ~0.55–0.7 band
+  (`docs/plans/intent-layer.md`), but picked specifically to clear the
+  component's threshold. **Any future change to `tierFor()`'s confidence
+  values must be checked against `ConfidenceNum`'s hardcoded 65%/85%
+  boundaries** — there's no compiler/test link between the two, only this
+  note. `docs/plans/intent-scope-drift.md` §2.
+- **2026-08-19** — `buildSmartDiff` (`src/modules/reviews/smart-diff.ts`) never
+  sees a finding's `dismissedAt` at all — its `SmartDiffFindingInput` type is
+  only `{file, start_line, end_line}`. Dismissed-finding exclusion happens one
+  layer up, in `ReviewService.getSmartDiff` (`service.ts`:
+  `latestFindings.filter((f) => f.dismissedAt == null)` before calling
+  `buildSmartDiff`). A unit test asserting "dismissed findings are excluded"
+  against the pure function is a false test — write it against
+  `getSmartDiff`/the route instead (this task's
+  `test/reviews-smart-diff-routes.it.test.ts` does). Same shape as intent's
+  `tierFor()` staying pure while its caller (`getOrComputeIntent`) does the
+  I/O/filtering — check which layer a filter actually lives in before
+  deciding where its test belongs, don't assume the pure classifier owns it.
+- **2026-08-18** — `GitClient.readFile(repo, path)` (`src/adapters/git/simple-git.ts:135-136`)
+  does a bare `join(this.clonePathFor(repo), path)` with **no path-traversal
+  guard of any kind** — any `..`/absolute segment resolves and reads outside
+  the clone. The adapter itself provides no protection; every caller that
+  feeds it a path derived from untrusted content (PR body, ticket text, any
+  future author-controlled source) is individually responsible for guarding
+  it before calling `readFile`. The Intent Layer's plan/spec-reference
+  resolver (`src/modules/reviews/intent.ts`) is the one caller that does this
+  correctly today — its `isSafePlanRefPath()` (shape allowlist restricting to
+  `**/specs/*.md` / `**/docs/**/*.md` / `docs/plans/**`, PLUS a
+  `path.resolve()` containment check against the clone root) runs before
+  every `readFile` call. Reuse `isSafePlanRefPath`/`isAllowedPlanRefShape`/
+  `isWithinClone` (all exported from `intent.ts`) for any new feature that
+  needs to read a repo file at a path sourced from untrusted text, rather than
+  re-deriving a guard or assuming `readFile` is safe by default.
+
+- **2026-08-18** — `Container.reviewRepo` (the shared getter, documented in
+  `container.ts` as "so consuming modules use `container.reviewRepo` instead
+  of reaching into another module's folder") had ZERO real callers before
+  `getOrComputeIntent` (`reviews/intent.ts`) — `ReviewService`/
+  `ReviewRunExecutor` both construct their own `new
+  ReviewRepository(container.db)` in the constructor and thread it through as
+  `this.repo` instead. `getOrComputeIntent`'s signature is fixed to
+  `(container, workspaceId, repo, pull, opts, log)` (no repository param —
+  see `docs/plans/intent-layer.md` Step 4), so it uses `container.reviewRepo`
+  directly; this is also what makes it trivially mockable in tests (`{
+  ...fakeContainer, reviewRepo: stub } as unknown as Container`), unlike
+  `this.repo`-style construction which needs a class-instance cast to
+  override. `server/src/modules/reviews/intent.ts`, `server/test
+  /reviews-intent.test.ts`.
+
+- **2026-08-18** — `ReviewRepository.getIntent()` coalesces a NULL
+  `pr_intent.confidence` to `0` (lowest tier) rather than making the field
+  nullable on the `Intent` Zod contract or throwing. `confidence` is a
+  required, non-nullable `z.number()` on `Intent`
+  (`src/vendor/shared/contracts/brief.ts`) by design — every real write path
+  (`getOrComputeIntent`'s `tierFor()`, per the Intent Layer plan's Step 4)
+  always sets it, so NULL can only mean a row written before the
+  `confidence`/`source`/`plan_refs` columns existed. `source` stays
+  `nullish` on the contract and is passed through as-is (`null` is a valid
+  `Intent.source` value, unlike `confidence`).
+  `server/src/modules/reviews/repository/pull.repo.ts` (`getIntent`).
 
 - **2026-08-12** — `server/src/db/seed.ts` inserts skill rows directly via
   `db.insert(t.skills)`, bypassing `SkillsRepository.insert()` — so seeded
@@ -184,6 +350,20 @@ _None yet._
 
 ## Recurring Errors & Fixes
 
+- **2026-08-18** — `@fastify/rate-limit` is never registered when
+  `config.nodeEnv === 'test'` (`src/app.ts`: "Disabled under test so
+  integration suites can hammer endpoints via inject()") — a per-route
+  `config: { rateLimit: {...} } }` (e.g. `POST /pulls/:id/review`, `POST
+  /pulls/:id/intent/refresh`) is a no-op against the plugin that never loaded,
+  so an `*.it.test.ts` built with the usual `loadConfig({ ...process.env,
+  NODE_ENV: 'test' })` helper can fire 100 requests and never see a `429`. To
+  actually exercise a route's rate limit, build one dedicated `buildApp()`
+  instance with `NODE_ENV: 'production'` (only `nodeEnv` affects log
+  pretty-printing and this one plugin gate — safe to flip for a single test
+  with mocked adapters). `src/app.ts:95`, test:
+  `test/reviews-intent-routes.it.test.ts` ("POST refresh is rate-limited to
+  10/minute").
+
 - **2026-08-12** — Wrapping a "delete then bulk-insert" full-replace in a
   `db.transaction()` does NOT make it safe against two overlapping calls
   when the target rows don't exist yet. Postgres only serializes concurrent
@@ -217,4 +397,17 @@ _None yet._
 
 ## Open Questions
 
-_None yet._
+- **2026-08-18** — `test/contracts.test.ts`'s `Intent / BlastRadius / Risks /
+  PrHistory` test calls `Intent.parse({ intent, in_scope, out_of_scope })`
+  with no `confidence`, which now throws (`confidence` is a required
+  `z.number()` on `Intent` as of the Intent Layer plan's Step 1 contract
+  change, `docs/plans/intent-layer.md`). Not fixed here — `test/` is outside
+  Step 2's Owned paths (`server/src/db/schema/reviews.ts`,
+  `.../repository/pull.repo.ts`, `.../repository.ts`, migrations only); the
+  fixture needs a `confidence` field added, or `test-writer`'s pass should
+  pick it up. `server/test/contracts.test.ts:68-71`. **Fixed — already
+  resolved by the time of the 2026-08-18 test-writer pass**: the fixture at
+  that line already includes `confidence: 0.5`; `pnpm exec vitest run
+  --exclude '**/*.it.test.ts'` passes `test/contracts.test.ts` (8/8) as-is.
+  Resolved by some other change in the same working tree before this
+  question was acted on — no edit was needed.
