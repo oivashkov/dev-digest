@@ -4746,3 +4746,5 @@ snapshots:
   zod@3.25.76: {}
 
   zwitch@2.0.4: {}
+
+# smoke-test: touch only, no dependency change (SmartDiff boilerplate-classification check)
