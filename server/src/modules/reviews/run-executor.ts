@@ -75,6 +75,14 @@ export class ReviewRunExecutor {
     // mark the rows failed and persist the buffered log so it survives a reload.
     const failAll = async (msg: string) => {
       for (const { runId, agent } of jobs) {
+        // Trace saved BEFORE the status flips to a terminal value — see the
+        // matching note on the success/catch paths below. `waitForPrRuns`
+        // (and any other poller) only watches `agent_runs.status`; if status
+        // goes terminal first, a concurrent `GET /runs/:id/trace` can 404 in
+        // the gap before the trace document actually exists.
+        await this.repo
+          .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed'))
+          .catch(() => undefined);
         await this.repo
           .completeAgentRun(runId, {
             status: 'failed',
@@ -85,9 +93,6 @@ export class ReviewRunExecutor {
             grounding: '0/0 passed',
             error: msg,
           })
-          .catch(() => undefined);
-        await this.repo
-          .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed'))
           .catch(() => undefined);
         this.container.runBus.complete(runId);
       }
@@ -246,11 +251,20 @@ export class ReviewRunExecutor {
       // the timeline colors on, NOT the model's self-reported verdict.
       const blockers = countBlockers(keptFindings, agent.ciFailOn);
 
-      // ---- Persist review + findings + observability, atomically ------------
-      // These four writes must succeed or fail together: a crash between
+      // ---- Persist review + findings, atomically ------------------------------
+      // These three writes must succeed or fail together: a crash between
       // insertReview and insertFindings would otherwise leave a persisted
       // review with zero findings — indistinguishable from a genuinely clean
       // result. See backend-onion-architecture skill, Tier 1 finding #9.
+      //
+      // `completeAgentRun` (the status flip to 'done') is deliberately NOT in
+      // this transaction — it happens further below, AFTER `saveRunTrace`.
+      // `waitForPrRuns` (and any UI poller) only watches `agent_runs.status`;
+      // if status went terminal here, before the trace document exists, a
+      // concurrent `GET /runs/:id/trace` could 404 in that gap (reproduced:
+      // server/INSIGHTS.md, this entry's date — `trace.prompt_assembly` reads
+      // as `undefined` on the caller). "done" must mean the trace is already
+      // readable, not just that the review row is.
       const { review, findingRows, durationMs } = await this.repo.withTransaction(async (repo) => {
         const review = await repo.insertReview({
           workspaceId,
@@ -270,19 +284,6 @@ export class ReviewRunExecutor {
         await repo.markReviewed(pull.id, pull.headSha);
 
         const durationMs = elapsed();
-        // ---- Observability: agent_runs + ONE run_traces document ------------
-        await repo.completeAgentRun(runId, {
-          status: 'done',
-          durationMs,
-          tokensIn,
-          tokensOut,
-          costUsd,
-          findingsCount: findingRows.length,
-          grounding,
-          score: outcome.review.score,
-          blockers,
-          error: null,
-        });
         return { review, findingRows, durationMs };
       });
       runLog.result(`Persisted review ${review.id} with ${findingRows.length} finding(s)`);
@@ -320,6 +321,23 @@ export class ReviewRunExecutor {
       };
       runLog.info('Run complete; trace persisted');
       await this.repo.saveRunTrace(runId, trace);
+
+      // Status flips to 'done' LAST, only now that the trace is durably
+      // persisted (see the note above `withTransaction`) — a poller that
+      // observes a terminal `agent_runs.status` is guaranteed
+      // `GET /runs/:id/trace` is already readable.
+      await this.repo.completeAgentRun(runId, {
+        status: 'done',
+        durationMs,
+        tokensIn,
+        tokensOut,
+        costUsd,
+        findingsCount: findingRows.length,
+        grounding,
+        score: outcome.review.score,
+        blockers,
+        error: null,
+      });
       this.container.runBus.complete(runId);
 
       return { review, findings: findingRows, grounding, raw: outcome.review };
@@ -330,6 +348,11 @@ export class ReviewRunExecutor {
       const status = cancelled ? 'cancelled' : 'failed';
       const msg = cancelled ? 'Cancelled by user' : (err as Error).message;
       runLog.error(cancelled ? 'Run cancelled by user' : `Run failed: ${msg}`);
+      // Trace saved BEFORE the status flip — same reasoning as the success
+      // path and `failAll` above.
+      await this.repo
+        .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed', Date.now() - start))
+        .catch(() => undefined);
       await this.repo
         .completeAgentRun(runId, {
           status,
@@ -340,9 +363,6 @@ export class ReviewRunExecutor {
           grounding: '0/0 passed',
           error: msg,
         })
-        .catch(() => undefined);
-      await this.repo
-        .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed', Date.now() - start))
         .catch(() => undefined);
       this.container.runBus.complete(runId);
       throw err;
