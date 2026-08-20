@@ -145,7 +145,7 @@ export function assemblePrompt(parts: PromptParts): AssembledPrompt {
     callers: parts.callers ?? null,
     repo_map: parts.repoMap ?? null,
     pr_description: prDescription ?? null,
-    pr_intent: parts.intent ?? null,
+    intent: parts.intent ?? null,
     user,
   };
 

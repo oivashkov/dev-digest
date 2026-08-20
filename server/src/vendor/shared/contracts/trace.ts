@@ -48,8 +48,11 @@ export const PromptAssembly = z.object({
   repo_map: z.string().nullish(),
   /** PR author's description/body (truncated); null when absent. */
   pr_description: z.string().nullish(),
-  /** Derived PR intent/scope (Intent Layer); null when absent. */
-  pr_intent: z.string().nullish(),
+  /** Derived PR intent/scope (Intent Layer); null when absent. Named `intent`,
+      not `pr_intent`, to match the source slot it mirrors 1:1 — `PromptParts.intent`
+      (`reviewer-core/src/prompt.ts`) — the same way `callers`/`repo_map` keep
+      their source field's base name instead of gaining an unrelated prefix. */
+  intent: z.string().nullish(),
   user: z.string(),
 });
 export type PromptAssembly = z.infer<typeof PromptAssembly>;

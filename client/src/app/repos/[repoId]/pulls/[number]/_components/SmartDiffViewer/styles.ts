@@ -22,19 +22,20 @@ export const s = {
     color: "var(--text-muted)",
   } satisfies CSSProperties,
   groupFiles: { display: "flex", flexDirection: "column", gap: 10 } satisfies CSSProperties,
-  fileRow: { display: "flex", flexDirection: "column", gap: 4 } satisfies CSSProperties,
-  /** Clickable "N findings" affordance rendered above a file's FileCard —
-   *  scrolls to the file's first finding line. FileCard's own header badge
-   *  (`diff-viewer/FileCard`) is decorative/non-interactive by design, so this
-   *  is a SmartDiffViewer-owned control, not a click handler bolted onto it. */
-  jumpButton: {
-    display: "inline-flex",
+  fileRow: { display: "flex", flexDirection: "column", gap: 6 } satisfies CSSProperties,
+  /** Row of per-finding severity badges rendered above a file's FileCard —
+   *  one badge per finding (not a single aggregate count). FileCard's own
+   *  header badge (`diff-viewer/FileCard`) is decorative/non-interactive by
+   *  design, so this is a SmartDiffViewer-owned control: each badge scrolls
+   *  to its finding's line and opens its `FindingCard`. */
+  findingBadgeRow: {
+    display: "flex",
+    flexWrap: "wrap",
     alignSelf: "flex-start",
-    alignItems: "center",
-    gap: 4,
-    fontSize: 12,
-    fontWeight: 500,
-    color: "var(--warn)",
+    gap: 6,
+  } satisfies CSSProperties,
+  findingBadgeButton: {
+    display: "inline-flex",
     background: "transparent",
     border: "none",
     padding: 0,

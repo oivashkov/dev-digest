@@ -181,6 +181,10 @@ export function PrDetailView() {
             filesCount={pr.files_count}
             files={pr.files}
             canComment={pr.status === "open"}
+            repoFullName={repoFullName}
+            repoProvider={repoProvider}
+            repoHost={repoHost}
+            headSha={pr.head_sha}
           />
         )}
       </div>

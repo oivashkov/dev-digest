@@ -5,21 +5,28 @@
    anchors come from `GET /pulls/:id/smart-diff` (`useSmartDiff`) — a
    deterministic, LLM-free computation (`docs/plans/smart-diff.md`). Reuses
    `FileCard` for per-file rendering so inline comments keep working
-   unchanged in Smart order. */
+   unchanged in Smart order.
+
+   Each file's findings render as one compact severity badge per finding
+   (not a single aggregate count) — clicking a badge scrolls the diff to that
+   finding's line AND opens its full `FindingCard` (severity, rationale,
+   accept/dismiss) right there, reusing the same card the Findings tab uses
+   instead of a stripped-down summary. */
 "use client";
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Icon } from "@devdigest/ui";
+import { SeverityBadge, type Severity } from "@devdigest/ui";
 import { DiffViewer, FileCard, type DiffCommentApi } from "@/components/diff-viewer";
-import { useSmartDiff } from "@/lib/hooks/reviews";
-import type { PrFile, SmartDiffRole } from "@devdigest/shared";
+import { useSmartDiff, usePrReviews, useFindingAction } from "@/lib/hooks/reviews";
+import { FindingCard } from "../FindingCard";
+import type { FindingActionKind, FindingRecord, PrFile, SmartDiffRole } from "@devdigest/shared";
 import { s } from "./styles";
 import { GROUP_ORDER } from "./constants";
 
-/** Scroll-to-line target for a click on a file's findings affordance — same
- *  target/nonce pattern as `FindingsTab.tsx`, keyed by file path since
- *  multiple files across groups can each have their own findings. */
+/** Scroll-to-line target for a click on a finding badge — same target/nonce
+ *  pattern as `FindingsTab.tsx`, keyed by file path since multiple files
+ *  across groups can each have their own findings. */
 interface ScrollTarget {
   path: string;
   line: number;
@@ -30,24 +37,61 @@ export function SmartDiffViewer({
   prId,
   files,
   commenting,
+  repoFullName,
+  repoProvider,
+  repoHost,
+  headSha,
 }: {
   prId: string | null;
   /** Source of each file's `patch` text — SmartDiff's own file entries carry
    *  only `path`/`additions`/`deletions`/`finding_lines`, not the diff body. */
   files: PrFile[];
   commenting?: DiffCommentApi;
+  /** Passed through to the inline `FindingCard` for its file:line deep-link. */
+  repoFullName?: string | null;
+  repoProvider?: "github" | "gitlab";
+  repoHost?: string;
+  headSha?: string | null;
 }) {
   const t = useTranslations("smartDiff");
   const { data, isLoading, isError } = useSmartDiff(prId);
+  const { data: reviews } = usePrReviews(prId);
+  const action = useFindingAction();
   const [target, setTarget] = React.useState<ScrollTarget | null>(null);
+  const [openFindingId, setOpenFindingId] = React.useState<string | null>(null);
 
   const fileByPath = React.useMemo(() => new Map(files.map((f) => [f.path, f])), [files]);
 
-  const handleJump = React.useCallback((path: string, lines: number[]) => {
-    if (lines.length === 0) return;
-    const line = Math.min(...lines);
-    setTarget((prev) => ({ path, line, n: (prev?.n ?? 0) + 1 }));
+  // Per-file, non-dismissed findings from the PR's latest review — the same
+  // "latest review, non-dismissed" source the server uses to build
+  // `finding_lines` (`server/src/modules/reviews/smart-diff.ts` +
+  // `service.ts#getSmartDiff`), but keeping each individual Finding (id,
+  // severity, rationale) instead of collapsing to bare line numbers, so the
+  // diff can render one severity badge per finding and open its real card.
+  const findingsByPath = React.useMemo(() => {
+    const latest = reviews?.[0]?.findings ?? [];
+    const map = new Map<string, FindingRecord[]>();
+    for (const f of latest) {
+      if (f.dismissed_at != null) continue;
+      const list = map.get(f.file);
+      if (list) list.push(f);
+      else map.set(f.file, [f]);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.start_line - b.start_line);
+    return map;
+  }, [reviews]);
+
+  const handleFindingClick = React.useCallback((path: string, finding: FindingRecord) => {
+    setTarget((prev) => ({ path, line: finding.start_line, n: (prev?.n ?? 0) + 1 }));
+    setOpenFindingId((prev) => (prev === finding.id ? null : finding.id));
   }, []);
+
+  const handleFindingAction = React.useCallback(
+    (findingId: string, act: FindingActionKind) => {
+      action.mutate({ findingId, action: act, prId: prId ?? undefined });
+    },
+    [action, prId],
+  );
 
   // Graceful fallback: while SmartDiff is loading, failed to load, or came
   // back with nothing to group, render the plain original-order DiffViewer
@@ -72,9 +116,17 @@ export function SmartDiffViewer({
           role={group.role}
           files={group.files}
           fileByPath={fileByPath}
+          findingsByPath={findingsByPath}
           commenting={commenting}
           target={target}
-          onJump={handleJump}
+          openFindingId={openFindingId}
+          onFindingClick={handleFindingClick}
+          onFindingAction={handleFindingAction}
+          actionPending={action.isPending}
+          repoFullName={repoFullName}
+          repoProvider={repoProvider}
+          repoHost={repoHost}
+          headSha={headSha}
           t={t}
         />
       ))}
@@ -86,17 +138,33 @@ function SmartDiffGroupSection({
   role,
   files,
   fileByPath,
+  findingsByPath,
   commenting,
   target,
-  onJump,
+  openFindingId,
+  onFindingClick,
+  onFindingAction,
+  actionPending,
+  repoFullName,
+  repoProvider,
+  repoHost,
+  headSha,
   t,
 }: {
   role: SmartDiffRole;
   files: { path: string; additions: number; deletions: number; finding_lines: number[] }[];
   fileByPath: Map<string, PrFile>;
+  findingsByPath: Map<string, FindingRecord[]>;
   commenting?: DiffCommentApi;
   target: ScrollTarget | null;
-  onJump: (path: string, lines: number[]) => void;
+  openFindingId: string | null;
+  onFindingClick: (path: string, finding: FindingRecord) => void;
+  onFindingAction: (findingId: string, action: FindingActionKind) => void;
+  actionPending: boolean;
+  repoFullName?: string | null;
+  repoProvider?: "github" | "gitlab";
+  repoHost?: string;
+  headSha?: string | null;
   t: ReturnType<typeof useTranslations>;
 }) {
   return (
@@ -109,30 +177,49 @@ function SmartDiffGroupSection({
         {files.map((f) => {
           const patchFile = fileByPath.get(f.path);
           if (!patchFile) return null;
-          const hasFindings = f.finding_lines.length > 0;
+          const fileFindings = findingsByPath.get(f.path) ?? [];
+          const hasFindings = fileFindings.length > 0;
           // core/wiring always default open; boilerplate only when it has
           // findings — findings must never stay hidden, even in boilerplate.
           const defaultOpen = role !== "boilerplate" || hasFindings;
           const isTarget = target?.path === f.path;
+          const openFinding = fileFindings.find((finding) => finding.id === openFindingId);
           return (
             <div key={f.path} style={s.fileRow}>
               {hasFindings && (
-                <button
-                  type="button"
-                  style={s.jumpButton}
-                  onClick={() => onJump(f.path, f.finding_lines)}
-                  aria-label={t("jumpAriaLabel", { path: f.path })}
-                >
-                  <Icon.AlertOctagon size={12} />
-                  {t("findingsCount", { count: f.finding_lines.length })}
-                </button>
+                <div style={s.findingBadgeRow}>
+                  {fileFindings.map((finding) => (
+                    <button
+                      key={finding.id}
+                      type="button"
+                      style={s.findingBadgeButton}
+                      onClick={() => onFindingClick(f.path, finding)}
+                      aria-label={t("findingBadgeAriaLabel", { title: finding.title })}
+                    >
+                      <SeverityBadge severity={finding.severity as Severity} compact />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {openFinding && (
+                <FindingCard
+                  key={openFinding.id}
+                  f={openFinding}
+                  defaultExpanded
+                  pending={actionPending}
+                  repoFullName={repoFullName}
+                  repoProvider={repoProvider}
+                  repoHost={repoHost}
+                  headSha={headSha}
+                  onAction={(act) => onFindingAction(openFinding.id, act)}
+                />
               )}
               <FileCard
                 file={patchFile}
                 commenting={commenting}
                 defaultOpen={defaultOpen}
                 highlightLines={f.finding_lines}
-                findingCount={f.finding_lines.length}
+                findingCount={fileFindings.length}
                 scrollToLine={isTarget ? target.line : undefined}
                 scrollNonce={isTarget ? target.n : undefined}
               />

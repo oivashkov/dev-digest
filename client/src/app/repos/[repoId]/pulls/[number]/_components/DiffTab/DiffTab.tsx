@@ -16,11 +16,26 @@ interface DiffTabProps {
   files: PrFile[];
   /** Inline commenting is offered only on open PRs (GitHub rejects otherwise). */
   canComment?: boolean;
+  /** Passed through to SmartDiffViewer's inline FindingCard for its
+   *  file:line deep-link (same props FindingsTab already threads). */
+  repoFullName?: string | null;
+  repoProvider?: "github" | "gitlab";
+  repoHost?: string;
+  headSha?: string | null;
 }
 
 type DiffOrder = "smart" | "original";
 
-export function DiffTab({ prId, filesCount, files, canComment }: DiffTabProps) {
+export function DiffTab({
+  prId,
+  filesCount,
+  files,
+  canComment,
+  repoFullName,
+  repoProvider,
+  repoHost,
+  headSha,
+}: DiffTabProps) {
   const t = useTranslations("smartDiff");
   const { data: comments } = usePrComments(prId);
   const create = useCreatePrComment(prId);
@@ -89,7 +104,15 @@ export function DiffTab({ prId, filesCount, files, canComment }: DiffTabProps) {
         Files changed · {filesCount} files
       </SectionLabel>
       {order === "smart" ? (
-        <SmartDiffViewer prId={prId} files={files} commenting={commenting} />
+        <SmartDiffViewer
+          prId={prId}
+          files={files}
+          commenting={commenting}
+          repoFullName={repoFullName}
+          repoProvider={repoProvider}
+          repoHost={repoHost}
+          headSha={headSha}
+        />
       ) : (
         <DiffViewer files={files} commenting={commenting} />
       )}

@@ -72,6 +72,27 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-20** — `useSmartDiff`'s `SmartDiffFile.finding_lines` is bare
+  `number[]` (deduped line numbers, no severity/id/rationale) — it cannot
+  drive a per-finding severity badge or an "open this finding" click target
+  by itself. `SmartDiffViewer` fixed this (post-merge review finding: it only
+  showed one aggregate "N findings" count, no per-finding severity, and
+  clicking only scrolled — never opened detail) by ALSO calling
+  `usePrReviews(prId)` directly and taking `reviews?.[0]?.findings` filtered
+  to `dismissed_at == null` — the exact same "latest review, non-dismissed"
+  source the server joins in `server/src/modules/reviews/service.ts
+  #getSmartDiff` to build `finding_lines` in the first place, so the two
+  stay in sync instead of the client re-deriving a different subset. Renders
+  one `SeverityBadge compact` (`@devdigest/ui` — the `compact` prop already
+  existed, just unused until now) per finding instead of one aggregate
+  count; clicking a badge both scrolls (existing target/nonce, unchanged)
+  and toggles the REAL `FindingCard` (`../FindingCard`, reused as-is with its
+  own `useFindingAction` accept/dismiss wiring) open inline, rather than a
+  stripped-down inline summary. Needed `repoFullName`/`repoProvider`/
+  `repoHost`/`headSha` threaded PrDetailView → DiffTab → SmartDiffViewer
+  (mirrors what `FindingsTab` already receives) purely for `FindingCard`'s
+  file:line deep-link.
+  `client/src/app/repos/[repoId]/pulls/[number]/_components/SmartDiffViewer/SmartDiffViewer.tsx`.
 - **2026-08-19** — `src/components/diff-viewer/*` (`FileCard`, `CodeLine`,
   `DiffViewer`, `CommentCard`, `OutdatedComments`, `InlineComposer`,
   `CommentThreadView`) has ZERO dedicated `*.test.tsx` files despite being
