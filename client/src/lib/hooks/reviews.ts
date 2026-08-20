@@ -8,6 +8,7 @@ import { api, API_BASE, ApiError } from "../api";
 import { notify } from "../toast";
 import type {
   FindingActionKind,
+  PrBlastRadius,
   PrIntentRecord,
   PrReviewComment,
   ReviewRecord,
@@ -130,6 +131,20 @@ export function useSmartDiff(prId: string | null | undefined) {
   return useQuery({
     queryKey: ["smart-diff", prId],
     queryFn: () => api.get<SmartDiff>(`/pulls/${prId}/smart-diff`),
+    enabled: !!prId,
+  });
+}
+
+// ---- Blast Radius: deterministic downstream-impact panel (Overview tab) ----
+/** Symbols declared in the PR's changed files, their resolved callers, and the
+   endpoints/crons reachable within a 2-level reverse import walk — computed
+   fresh from the repo-intel index on every call, no LLM involved (see
+   `docs/plans/blast-radius.md`). `status` is `'degraded'` when the repo has no
+   usable index rather than the server silently returning empty arrays. */
+export function useBlastRadius(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["blast", prId],
+    queryFn: () => api.get<PrBlastRadius>(`/pulls/${prId}/blast`),
     enabled: !!prId,
   });
 }

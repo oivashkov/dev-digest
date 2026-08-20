@@ -47,6 +47,14 @@ export const INDEX_SOFT_BUDGET_MS = 110_000;
 
 // --- [T3] Graph / hotness / repo-map ---------------------------------------
 export const BFS_DEPTH = 2;
+/**
+ * [T3] Max files kept PER LEVEL of blast's reverse-import walk (`file_edges`
+ * fan-in), sorted by `file_rank` DESC before the cut. A heuristic, not yet
+ * measured against a real indexed repo — see `server/INSIGHTS.md` if this
+ * value gets revisited. Exceeding it sets `BlastResult.truncated = true`
+ * rather than silently dropping files.
+ */
+export const MAX_REVERSE_FANOUT_PER_LEVEL = 200;
 export const HOTNESS_WINDOW_DAYS = 180;
 export const DEFAULT_REPO_MAP_TOKEN_BUDGET = 1500;
 /** Signatures are trimmed to this many chars in the parse phase (cache stability). */

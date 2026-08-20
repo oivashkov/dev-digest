@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { PrIntentRecord, RunRequest, SmartDiff } from '@devdigest/shared';
+import { PrBlastRadius, PrIntentRecord, RunRequest, SmartDiff } from '@devdigest/shared';
 import type { RunEvent } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
@@ -17,6 +17,7 @@ import { ReviewService } from './service.js';
  *   GET    /pulls/:id/intent                           → PR intent (compute-if-missing, cached)
  *   POST   /pulls/:id/intent/refresh                   → PR intent (forced recompute)
  *   GET    /pulls/:id/smart-diff                       → files grouped by review risk (deterministic, no LLM)
+ *   GET    /pulls/:id/blast                            → blast radius: symbols/callers/endpoints/crons (deterministic, no LLM)
  */
 const FINDING_ACTIONS = ['accept', 'dismiss'] as const;
 export default async function reviewsRoutes(appBase: FastifyInstance) {
@@ -150,6 +151,18 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
     async (req) => {
       const { workspaceId } = await getContext(container, req);
       return service.getSmartDiff(workspaceId, req.params.id);
+    },
+  );
+
+  // ---- Blast radius: symbols/callers/endpoints/crons (deterministic, no LLM) -
+  // Same as SmartDiff above: recomputed fresh on every call, no caching table,
+  // no rate limit — no LLM call happens on this route.
+  app.get(
+    '/pulls/:id/blast',
+    { schema: { params: IdParams, response: { 200: PrBlastRadius } } },
+    async (req) => {
+      const { workspaceId } = await getContext(container, req);
+      return service.getBlastRadius(workspaceId, req.params.id);
     },
   );
 

@@ -38,7 +38,13 @@ touch the pipeline internals:
 - `getRepoMap(repoId)` → the cached repo skeleton (fed into the **review prompt**).
 - `getFileRank(repoId, files)` → importance percentile per changed file.
 - `getCallerSignatures(repoId, files, limit)` → callers of changed symbols.
-- `getBlastRadius(repoId, files)` → impacted symbols / callers (used by L04).
+- `getBlastRadius(repoId, files)` → impacted symbols / callers, PLUS a 2-level
+  reverse-import walk over `file_edges` ("who imports a changed file, and who
+  imports THAT?", capped at `MAX_REVERSE_FANOUT_PER_LEVEL` per level) and the
+  `impactedCrons`/`impactedEndpoints` reachable through either route (used by
+  L04). The reverse walk runs independently of symbol-level callers, so a
+  changed file with no direct symbol caller can still surface an impacted
+  route through an intermediate importer.
 - `getUnresolvedReferences(repoId, …)` → phantom-symbol detection (used by L06).
 - `getConventionSamples(repoId)` → top-ranked files for convention extraction
   (L02) — consumed by `modules/conventions/service.ts`'s extraction job.

@@ -131,6 +131,14 @@ export interface ResolvedCallerRow {
   rank: number;
 }
 
+/** One `file_edges` row importing one of the queried `toFile`s, with its rank. */
+export interface ImporterRow {
+  fromFile: string;
+  toFile: string;
+  /** `file_rank.rank` of `fromFile`, or `0` when the importer has no rank row. */
+  rank: number;
+}
+
 export class RepoIntelRepository {
   constructor(private db: Db) {}
 
@@ -436,6 +444,37 @@ export class RepoIntelRepository {
       .select({ fromFile: t.fileEdges.fromFile, toFile: t.fileEdges.toFile })
       .from(t.fileEdges)
       .where(eq(t.fileEdges.repoId, repoId));
+  }
+
+  /**
+   * Direct importers of any of `files`: `SELECT from_file, to_file` from
+   * `file_edges` filtered on `to_file IN (...)`, LEFT JOINed to `file_rank`
+   * on `from_file` (an importer with no rank row — e.g. a partial index —
+   * still comes back, with `rank: 0`). This is what blast's reverse walk
+   * ("who depends on this file?") uses: it hits `file_edges_repo_to_idx
+   * (repo_id, to_file)` and returns only the fan-in of `files`, O(degree) —
+   * unlike `getEdges()` above, which reads the WHOLE repo graph and is unfit
+   * for a targeted walk.
+   */
+  async getImporters(repoId: string, files: string[]): Promise<ImporterRow[]> {
+    if (files.length === 0) return [];
+    const rows = await this.db
+      .select({
+        fromFile: t.fileEdges.fromFile,
+        toFile: t.fileEdges.toFile,
+        rank: t.fileRank.rank,
+      })
+      .from(t.fileEdges)
+      .leftJoin(
+        t.fileRank,
+        and(
+          eq(t.fileRank.repoId, t.fileEdges.repoId),
+          eq(t.fileRank.filePath, t.fileEdges.fromFile),
+        ),
+      )
+      .where(and(eq(t.fileEdges.repoId, repoId), inArray(t.fileEdges.toFile, files)))
+      .orderBy(desc(t.fileRank.rank));
+    return rows.map((r) => ({ fromFile: r.fromFile, toFile: r.toFile, rank: r.rank ?? 0 }));
   }
 
   /** `{path, percentile}` for the given paths (smart-diff / run-executor). */

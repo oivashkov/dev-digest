@@ -204,6 +204,22 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-20** — `RepoIntel.getBlastRadius`'s `BlastResult.callers` arrives
+  at any consumer ALREADY capped to `MAX_CALLERS_PER_SYMBOL` (20) per
+  `viaSymbol` — the facade's `capCallersPerSymbol` runs inside
+  `tryPersistentBlast`/the ripgrep path before the result is ever returned
+  (`repo-intel/service.ts:309,423`). A consumer that needs to know WHETHER a
+  symbol's caller list was actually truncated (not just how many callers
+  survived) has no true pre-cap count to compare against — the only signal
+  left is "this symbol's group hit exactly the cap", which is a heuristic
+  (a symbol with precisely 20 real callers reads as truncated too). Used
+  this way in `reviews/blast.ts`'s `buildPrBlastRadius` (`PrBlastSymbol
+  .callers_truncated`, and via that, `PrBlastRadius.status: 'partial'`). If
+  a future consumer needs the exact pre-cap count, it has to be threaded
+  through `BlastResult` itself (e.g. a `totalCallersBySymbol` map) rather
+  than re-derived downstream — the information doesn't exist past the
+  facade boundary. `server/src/modules/repo-intel/service.ts`
+  (`capCallersPerSymbol`), `server/src/modules/reviews/blast.ts`.
 - **2026-08-19** — When a follow-up needs to add a field to what a route
   returns but the underlying value is CACHED/persisted (like `Intent` on
   `pr_intent`), extend the **transport** type (`PrIntentRecord` in
@@ -300,6 +316,20 @@ _None yet._
 
 ## Tool & Library Notes
 
+- **2026-08-20** — Postgres's `ORDER BY <col> DESC` default is `NULLS
+  FIRST`, not `NULLS LAST` (only `ASC` defaults to `NULLS LAST`). This bit a
+  `LEFT JOIN file_rank ... ORDER BY rank DESC` query
+  (`RepoIntelRepository.getImporters`, blast's reverse-import walk): an
+  importer with no `file_rank` row (partial index, or a file the ranker
+  skipped) gets `rank: NULL` from the join, and DESC would put every
+  unranked importer BEFORE every ranked one — the opposite of "highest rank
+  first." The SQL `ORDER BY` is kept only as a best-effort default; the real
+  ordering/truncation happens in JS after coalescing `rank ?? 0`
+  (`RepoIntelService.walkDownstreamFiles`), which sidesteps the NULLS-FIRST
+  trap entirely. Any future `LEFT JOIN ... ORDER BY <nullable> DESC` in this
+  codebase needs `NULLS LAST` explicitly (drizzle: no built-in helper for
+  this — raw `sql` fragment) or the same "sort defensively in JS" pattern.
+  `server/src/modules/repo-intel/repository.ts` (`getImporters`).
 - **2026-08-12** — `fflate`'s `unzipSync(data, { filter })` skips
   decompressing an entry the filter rejects entirely — it is not "inflate
   then discard," the rejected entry's bytes are never inflated at all. This

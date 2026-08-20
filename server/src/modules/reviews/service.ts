@@ -1,5 +1,12 @@
 import type { Container } from '../../platform/container.js';
-import type { FindingActionKind, PrIntentRecord, RunEventKind, RunTrace, SmartDiff } from '@devdigest/shared';
+import type {
+  FindingActionKind,
+  PrBlastRadius,
+  PrIntentRecord,
+  RunEventKind,
+  RunTrace,
+  SmartDiff,
+} from '@devdigest/shared';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import type { AgentRow } from '../../db/rows.js';
 import { ReviewRepository } from './repository.js';
@@ -9,6 +16,7 @@ import { actOnFinding as actOnFindingImpl } from './findings.js';
 import { reviewToDto } from './helpers.js';
 import { getOrComputeIntent as getOrComputeIntentImpl, computeScopeDrift } from './intent.js';
 import { buildSmartDiff } from './smart-diff.js';
+import { buildPrBlastRadius } from './blast.js';
 
 // Re-export DTO types + converters for backward-compatible imports from
 // './service.js' (these previously lived here; logic now in ./helpers.ts).
@@ -251,5 +259,35 @@ export class ReviewService {
       files.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
       findings.map((f) => ({ file: f.file, start_line: f.startLine, end_line: f.endLine })),
     );
+  }
+
+  // ===========================================================================
+  // Blast radius (deterministic, no LLM — recomputed fresh on every call, no
+  // caching table; see `docs/plans/blast-radius.md` Step 3)
+  // ===========================================================================
+
+  /**
+   * `GET /pulls/:id/blast`. Workspace-scoped PR lookup (same pattern as
+   * `getSmartDiff`), then the SAME `getPrFiles` call `getSmartDiff`/intent
+   * already use to get the PR's changed-file paths — no new way to obtain
+   * them. Fetches `repoIntel.getBlastRadius` (the actual result) and
+   * `repoIntel.getIndexState` (needed ONLY to tell `full` apart from
+   * `partial`, since `tryPersistentBlast` returns `degraded: false` for both
+   * — see `repo-intel/service.ts:320`) in parallel, then hands both to the
+   * pure `buildPrBlastRadius` mapper.
+   */
+  async getBlastRadius(workspaceId: string, prId: string): Promise<PrBlastRadius> {
+    const pull = await this.repo.getPull(workspaceId, prId);
+    if (!pull) throw new NotFoundError('Pull request not found');
+
+    const files = await this.repo.getPrFiles(prId);
+    const paths = files.map((f) => f.path);
+
+    const [result, indexState] = await Promise.all([
+      this.container.repoIntel.getBlastRadius(pull.repoId, paths),
+      this.container.repoIntel.getIndexState(pull.repoId),
+    ]);
+
+    return buildPrBlastRadius({ prId, repoId: pull.repoId, result, indexState });
   }
 }

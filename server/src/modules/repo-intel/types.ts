@@ -71,17 +71,38 @@ export interface BlastCallerRow {
   rank: number;
 }
 
+/** One file discovered while walking `file_edges` backwards from a changed file. */
+export interface BlastDownstreamFile {
+  file: string;
+  /** 1 = direct importer of a changed file, 2 = importer of a depth-1 file. */
+  depth: number;
+  /** `file_rank.rank` of `file` (0 when unranked). */
+  rank: number;
+}
+
 export interface BlastResult {
   changedSymbols: BlastChangedSymbol[];
   callers: BlastCallerRow[];
   /** "METHOD /path" (via extractEndpoints / file_facts) — flat union. */
   impactedEndpoints: string[];
+  /** Cron/scheduled-job ids reachable from the blast set — flat union. */
+  impactedCrons: string[];
+  /**
+   * Files reached by walking `file_edges` backwards (importer → imported)
+   * from the changed files, up to `BFS_DEPTH` levels — independent of
+   * whether a direct symbol-level caller was found. Empty on the
+   * degraded/ripgrep path, which has no `file_edges` to walk (never a
+   * simulated/best-effort substitute — see the DEGRADED CONTRACT above).
+   */
+  downstreamFiles: BlastDownstreamFile[];
   /**
    * Per-caller-file precomputed facts, so consumers (blast) can attribute
    * endpoints/crons to the changed symbol whose callers live in that file.
    * Present on the persistent (non-degraded) path; absent otherwise.
    */
   factsByFile?: Record<string, { endpoints: string[]; crons: string[] }>;
+  /** True when a reverse-import level exceeded `MAX_REVERSE_FANOUT_PER_LEVEL`. */
+  truncated?: boolean;
   degraded?: boolean;
   reason?: DegradedReason;
 }

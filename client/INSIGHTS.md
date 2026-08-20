@@ -208,8 +208,31 @@ _None yet._
   Used to add the cost badge to `ReviewRunAccordion`'s header — zero
   contract/server changes. `client/src/app/repos/[repoId]/pulls/[number]/_components/FindingsTab/FindingsTab.tsx`
 
+- **2026-08-20** — `PrBlastRadius.symbols[].endpoints`/`.crons` (server's
+  `@devdigest/shared/contracts/blast.ts`) are aggregated **per symbol**, not
+  per caller — the contract has no caller→endpoint mapping (a caller-file's
+  own `file_facts` isn't threaded through). A "symbol → caller → endpoint"
+  3-column graph therefore cannot draw a real caller→endpoint edge; the
+  honest edge is symbol→endpoint directly, visually arching over the caller
+  column (`BlastRadiusGraph/helpers.ts#buildGraphLayout`'s `skipsColumn`
+  flag). If a future step adds per-caller endpoint data, the graph's edge
+  logic must change to route through the caller node instead of skipping it.
+  `client/src/app/repos/[repoId]/pulls/[number]/_components/BlastRadiusCard/_components/BlastRadiusGraph/helpers.ts`.
+
 ## Tool & Library Notes
 
+- **2026-08-20** — `@devdigest/ui`'s `Button` only varies visually on the
+  `active` prop for `kind="tertiary"` (`Button.tsx`'s `kinds` map keys
+  `background`/`color` off `active` there); `kind="ghost"` and `kind="secondary"`
+  ignore `active` entirely despite accepting the prop (`FindingCard.tsx`
+  already passes `active` to a `ghost` Button for its dismiss action with no
+  visible effect). A segmented Tree|Graph-style control built from two ghost
+  Buttons needs an explicit `style` override on the active one (own
+  `background`/`color`/`borderColor`) — passing `active` alone silently does
+  nothing. `client/src/vendor/ui/primitives/Button.tsx` (vendored, don't fix
+  there); worked around in
+  `client/src/app/repos/[repoId]/pulls/[number]/_components/BlastRadiusCard/styles.ts`
+  (`viewButtonActive`).
 - **2026-08-17** — `@testing-library/user-event` is NOT a dependency of
   `client/` (only `@testing-library/react` + `jest-dom` are, per
   `package.json`). Importing it compiles fine in an editor but fails
