@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "devdigest": {
+      "type": "stdio",
+      "command": "/Users/o.ivashkov/.nvm/versions/node/v24.4.0/bin/npm",
+      "args": [
+        "--prefix",
+        "mcp-server",
+        "start",
+        "--silent"
+      ],
+      "env": {
+        "PATH": "/Users/o.ivashkov/.nvm/versions/node/v24.4.0/bin:/usr/local/bin:/usr/bin:/bin"
+      }
+    }
+  }
+}
