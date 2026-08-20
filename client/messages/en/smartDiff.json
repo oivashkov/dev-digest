@@ -17,6 +17,5 @@
       "description": "generated/mechanical"
     }
   },
-  "findingsCount": "{count} {count, plural, one {finding} other {findings}}",
-  "jumpAriaLabel": "Jump to the first finding in {path}"
+  "findingBadgeAriaLabel": "Show finding: {title}"
 }

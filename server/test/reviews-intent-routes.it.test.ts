@@ -317,7 +317,7 @@ d('Reviews: PR intent routes (Testcontainers pg)', () => {
     expect((calls[1]!.req as { schemaName: string }).schemaName).toBe('Review');
 
     const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
-    expect(trace.prompt_assembly.pr_intent).toBe(INTENT_FIXTURE.intent);
+    expect(trace.prompt_assembly.intent).toBe(INTENT_FIXTURE.intent);
     expect(trace.prompt_assembly.user).toContain('## PR intent');
     expect(trace.prompt_assembly.user).toContain(INTENT_FIXTURE.intent);
 

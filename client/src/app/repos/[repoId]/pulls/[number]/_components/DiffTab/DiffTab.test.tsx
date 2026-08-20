@@ -10,11 +10,15 @@ import shellMessages from "../../../../../../../../messages/en/shell.json";
 const useSmartDiffMock = vi.fn();
 const usePrCommentsMock = vi.fn();
 const useCreatePrCommentMock = vi.fn();
+const usePrReviewsMock = vi.fn();
+const useFindingActionMock = vi.fn();
 
 vi.mock("@/lib/hooks/reviews", () => ({
   useSmartDiff: (...args: unknown[]) => useSmartDiffMock(...args),
   usePrComments: (...args: unknown[]) => usePrCommentsMock(...args),
   useCreatePrComment: (...args: unknown[]) => useCreatePrCommentMock(...args),
+  usePrReviews: (...args: unknown[]) => usePrReviewsMock(...args),
+  useFindingAction: (...args: unknown[]) => useFindingActionMock(...args),
 }));
 
 import { DiffTab } from "./DiffTab";
@@ -24,6 +28,8 @@ afterEach(() => {
   useSmartDiffMock.mockReset();
   usePrCommentsMock.mockReset();
   useCreatePrCommentMock.mockReset();
+  usePrReviewsMock.mockReset();
+  useFindingActionMock.mockReset();
 });
 
 function patchWithLine(line: number, text: string): string {
@@ -62,6 +68,8 @@ describe("DiffTab", () => {
     useSmartDiffMock.mockReturnValue({ data: SMART_DIFF, isLoading: false, isError: false });
     usePrCommentsMock.mockReturnValue({ data: [] });
     useCreatePrCommentMock.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
+    usePrReviewsMock.mockReturnValue({ data: [] });
+    useFindingActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
 
     renderTab();
 
@@ -101,6 +109,8 @@ describe("DiffTab", () => {
     useSmartDiffMock.mockReturnValue({ data: SMART_DIFF, isLoading: false, isError: false });
     usePrCommentsMock.mockReturnValue({ data: [] });
     useCreatePrCommentMock.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
+    usePrReviewsMock.mockReturnValue({ data: [] });
+    useFindingActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
 
     const { container } = renderTab();
 

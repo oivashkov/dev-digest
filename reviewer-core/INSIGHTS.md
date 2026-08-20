@@ -60,7 +60,17 @@ _None yet._
   trace (`z.object()` strips unknown keys by default). `trace.ts` isn't
   listed as an Owned path for any step in `docs/plans/intent-layer.md`'s
   contracts step — it's a gap in that plan's path table, not an oversight to
-  repeat: whichever slot you add here, check `trace.ts` too.
+  repeat: whichever slot you add here, check `trace.ts` too. **Naming
+  gotcha (found in post-merge review, fixed 2026-08-20):** the trace field
+  name must mirror the `PromptParts` field's own base name, not gain an
+  unrelated prefix — `repoMap`→`repo_map`, `prDescription`→`pr_description`
+  (that one already starts with "pr"), but `intent` (no "pr" prefix) was
+  shipped as `pr_intent`, breaking that pattern and creating a public-contract
+  naming mismatch between `PromptParts.intent` and the trace it feeds.
+  Renamed to `intent` in both `trace.ts` copies + `prompt.ts`; the DB table
+  `pr_intent` and the `PrIntentRecord` API contract are a different, correctly
+  -named concern (a persisted entity, not a prompt-assembly slot) and were
+  left untouched.
 
 ## Tool & Library Notes
 

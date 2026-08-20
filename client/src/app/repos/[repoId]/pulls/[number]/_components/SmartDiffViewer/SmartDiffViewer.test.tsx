@@ -1,14 +1,19 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
-import type { PrFile, SmartDiff } from "@devdigest/shared";
+import type { FindingRecord, PrFile, SmartDiff } from "@devdigest/shared";
 import smartDiffMessages from "../../../../../../../../messages/en/smartDiff.json";
 import shellMessages from "../../../../../../../../messages/en/shell.json";
+import prReviewMessages from "../../../../../../../../messages/en/prReview.json";
 
 const useSmartDiffMock = vi.fn();
+const usePrReviewsMock = vi.fn();
+const useFindingActionMock = vi.fn();
 
 vi.mock("@/lib/hooks/reviews", () => ({
   useSmartDiff: (...args: unknown[]) => useSmartDiffMock(...args),
+  usePrReviews: (...args: unknown[]) => usePrReviewsMock(...args),
+  useFindingAction: (...args: unknown[]) => useFindingActionMock(...args),
 }));
 
 import { SmartDiffViewer } from "./SmartDiffViewer";
@@ -16,6 +21,8 @@ import { SmartDiffViewer } from "./SmartDiffViewer";
 afterEach(() => {
   cleanup();
   useSmartDiffMock.mockReset();
+  usePrReviewsMock.mockReset();
+  useFindingActionMock.mockReset();
 });
 
 function patchWithLine(line: number, text: string): string {
@@ -61,13 +68,41 @@ const SMART_DIFF: SmartDiff = {
   split_suggestion: { too_big: false, total_lines: 4, proposed_splits: [] },
 };
 
+function finding(overrides: Partial<FindingRecord> = {}): FindingRecord {
+  return {
+    id: "f1",
+    severity: "CRITICAL",
+    category: "security",
+    title: "SQL injection via string concatenation",
+    file: "src/modules/bar/repository.ts",
+    start_line: 20,
+    end_line: 20,
+    rationale: "User input is concatenated directly into the query.",
+    suggestion: null,
+    confidence: 0.9,
+    kind: "finding",
+    trifecta_components: null,
+    evidence: null,
+    review_id: "r1",
+    accepted_at: null,
+    dismissed_at: null,
+    ...overrides,
+  };
+}
+
 function renderViewer(files: PrFile[] = FILES) {
   return render(
-    <NextIntlClientProvider locale="en" messages={{ smartDiff: smartDiffMessages, shell: shellMessages }}>
+    <NextIntlClientProvider
+      locale="en"
+      messages={{ smartDiff: smartDiffMessages, shell: shellMessages, prReview: prReviewMessages }}
+    >
       <SmartDiffViewer prId="pr-1" files={files} />
     </NextIntlClientProvider>,
   );
 }
+
+const NO_REVIEWS = { data: [] };
+const NO_ACTION = { mutate: vi.fn(), isPending: false };
 
 describe("SmartDiffViewer", () => {
   it("renders groups in core -> wiring -> boilerplate order, keeps boilerplate collapsed by default, and auto-expands a boilerplate file that has findings", () => {
@@ -88,6 +123,16 @@ describe("SmartDiffViewer", () => {
       ),
     };
     useSmartDiffMock.mockReturnValue({ data: withBoilerplateFinding, isLoading: false, isError: false });
+    usePrReviewsMock.mockReturnValue({
+      data: [
+        {
+          findings: [
+            finding({ id: "f-lockfile", file: "pnpm-lock.yaml", start_line: 3, end_line: 3 }),
+          ],
+        },
+      ],
+    });
+    useFindingActionMock.mockReturnValue(NO_ACTION);
 
     renderViewer([...FILES, file("pnpm-lock.yaml", 3, "lockfile finding line")]);
 
@@ -108,18 +153,33 @@ describe("SmartDiffViewer", () => {
     expect(screen.getByText("wiring change")).toBeInTheDocument();
   });
 
-  it("shows a findings badge with the right count and toggling Smart/Original in DiffTab-style state switches rendering", () => {
+  it("shows one severity badge per finding on a file, not a single aggregate count", () => {
     useSmartDiffMock.mockReturnValue({ data: SMART_DIFF, isLoading: false, isError: false });
+    usePrReviewsMock.mockReturnValue({
+      data: [
+        {
+          findings: [
+            finding({ id: "f1", severity: "CRITICAL" }),
+            finding({ id: "f2", severity: "WARNING", title: "Missing input validation" }),
+          ],
+        },
+      ],
+    });
+    useFindingActionMock.mockReturnValue(NO_ACTION);
     renderViewer();
 
-    expect(screen.getByText("1 finding")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Jump to the first finding in src\/modules\/bar\/repository\.ts/i }),
+      screen.getByRole("button", { name: "Show finding: SQL injection via string concatenation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show finding: Missing input validation" }),
     ).toBeInTheDocument();
   });
 
   it("falls back to the plain (original-order) DiffViewer while loading or on error", () => {
     useSmartDiffMock.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    usePrReviewsMock.mockReturnValue(NO_REVIEWS);
+    useFindingActionMock.mockReturnValue(NO_ACTION);
     const { unmount } = renderViewer();
     // DiffViewer renders every file flat, unsorted into groups — no group
     // headers present.
@@ -133,8 +193,10 @@ describe("SmartDiffViewer", () => {
     expect(screen.getByText("core change")).toBeInTheDocument();
   });
 
-  it("scrolls to a file's first finding line when its findings affordance is clicked", () => {
+  it("clicking a finding badge scrolls to its line AND opens its FindingCard; clicking again closes it", () => {
     useSmartDiffMock.mockReturnValue({ data: SMART_DIFF, isLoading: false, isError: false });
+    usePrReviewsMock.mockReturnValue({ data: [{ findings: [finding()] }] });
+    useFindingActionMock.mockReturnValue(NO_ACTION);
     renderViewer();
 
     const scrollIntoView = vi.fn();
@@ -142,11 +204,52 @@ describe("SmartDiffViewer", () => {
     // (triggered via FileCard's scrollToLine/scrollNonce props) doesn't throw.
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
 
-    const jumpBtn = screen.getByRole("button", {
-      name: /Jump to the first finding in src\/modules\/bar\/repository\.ts/i,
+    const badge = screen.getByRole("button", {
+      name: "Show finding: SQL injection via string concatenation",
     });
-    fireEvent.click(jumpBtn);
 
+    // Not open yet — the full card (rationale text) isn't rendered.
+    expect(
+      screen.queryByText("User input is concatenated directly into the query."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(badge);
     expect(scrollIntoView).toHaveBeenCalled();
+    expect(
+      screen.getByText("User input is concatenated directly into the query."),
+    ).toBeInTheDocument();
+
+    // Clicking the same badge again closes the card.
+    fireEvent.click(badge);
+    expect(
+      screen.queryByText("User input is concatenated directly into the query."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("fires accept/dismiss through the opened FindingCard", () => {
+    useSmartDiffMock.mockReturnValue({ data: SMART_DIFF, isLoading: false, isError: false });
+    usePrReviewsMock.mockReturnValue({ data: [{ findings: [finding()] }] });
+    const mutate = vi.fn();
+    useFindingActionMock.mockReturnValue({ mutate, isPending: false });
+    renderViewer();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show finding: SQL injection via string concatenation" }),
+    );
+    fireEvent.click(screen.getByText("Accept"));
+    expect(mutate).toHaveBeenCalledWith({ findingId: "f1", action: "accept", prId: "pr-1" });
+  });
+
+  it("excludes dismissed findings from the badges", () => {
+    useSmartDiffMock.mockReturnValue({ data: SMART_DIFF, isLoading: false, isError: false });
+    usePrReviewsMock.mockReturnValue({
+      data: [{ findings: [finding({ dismissed_at: "2026-08-01T00:00:00.000Z" })] }],
+    });
+    useFindingActionMock.mockReturnValue(NO_ACTION);
+    renderViewer();
+
+    expect(
+      screen.queryByRole("button", { name: "Show finding: SQL injection via string concatenation" }),
+    ).not.toBeInTheDocument();
   });
 });
