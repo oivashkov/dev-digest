@@ -38,7 +38,6 @@ export class ConventionsService {
     ]);
     return {
       candidates: rows.map(toConventionCandidateDto),
-      sample_file_count: SAMPLE_FILE_COUNT,
       last_scan_at: lastScanAt ? lastScanAt.toISOString() : null,
       scan_status: scanStatus,
     };

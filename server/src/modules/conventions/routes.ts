@@ -11,11 +11,15 @@
  */
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import { z } from 'zod';
 import { UpdateConventionCandidate, type ConventionsExtractAccepted } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { NotFoundError } from '../../platform/errors.js';
 import { ConventionsService } from './service.js';
+
+// Caller must now say whether this is a forced re-scan.
+const TriggerExtractionBody = z.object({ force: z.boolean() });
 
 export default async function conventionsRoutes(appBase: FastifyInstance) {
   const app = appBase.withTypeProvider<ZodTypeProvider>();
@@ -30,11 +34,11 @@ export default async function conventionsRoutes(appBase: FastifyInstance) {
 
   app.post(
     '/repos/:id/conventions/extract',
-    { schema: { params: IdParams } },
+    { schema: { params: IdParams, body: TriggerExtractionBody } },
     async (req, reply): Promise<ConventionsExtractAccepted> => {
       const { workspaceId } = await getContext(container, req);
       const { jobId, degraded } = await service.triggerExtraction(workspaceId, req.params.id);
-      reply.code(202);
+      reply.code(200);
       return degraded
         ? { status: 'accepted', degraded: true }
         : { status: 'accepted', job_id: jobId };

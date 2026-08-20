@@ -211,8 +211,8 @@ export const ConventionCandidate = z.object({
   evidence_path: z.string(),
   // "12-31" (range) or "12" (single line) — one string, mirrors the
   // `path:LINE-LINE` citation shown next to the code snippet in the UI.
-  evidence_line_range: z.string(),
-  evidence_snippet: z.string(),
+  evidence_line_range: z.string().nullable(),
+  snippet: z.string(),
   confidence: z.number().min(0).max(1),
   accepted: z.boolean(),
 });
@@ -221,8 +221,6 @@ export type ConventionCandidate = z.infer<typeof ConventionCandidate>;
 // GET /repos/:id/conventions
 export const ConventionsState = z.object({
   candidates: z.array(ConventionCandidate),
-  // Files actually sent to the extraction LLM call (not the full ranked set).
-  sample_file_count: z.number().int(),
   last_scan_at: z.string().nullable(),
   scan_status: z.enum(['idle', 'scanning', 'failed']),
 });
