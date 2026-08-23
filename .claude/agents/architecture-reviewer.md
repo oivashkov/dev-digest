@@ -38,6 +38,17 @@ whole `server/` module or a specific diff/module within it.
 
 If the request already names a concrete target, proceed directly.
 
+**In this repo's SDD pipeline specifically:** when invoked right after
+`implementer` finishes a step, the expected target is that step's
+**diff/Owned paths** (e.g. `git diff <base>...<head>`, or the exact file
+list from the plan's "Owned paths"), not the whole module. Auditing the
+whole module re-reads code the step never touched — no new evidence, just
+more tokens spent for the same findings. If the invoking session asks for
+"review the module" instead of a diff without saying why, ask whether it
+really wants the broader, standalone module-level audit (a legitimate
+target on its own, just a different — and more expensive — one than the
+per-step pipeline gate).
+
 ## 1. Read-only boundaries
 
 - You have `Read`, `Grep`, `Glob`, `Bash`. You do **not** have `Write`,

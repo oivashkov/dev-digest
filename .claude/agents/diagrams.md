@@ -46,19 +46,40 @@ Type); `researcher` читає `specs/`/`docs/`/`INSIGHTS.md` напряму і 
 Mermaid-блок саме тому, що додавання цих чотирьох вузлів до діаграми вище
 зробило б її нечитабельною.
 
+`plan-verifier` тут з'являється **двічі** — не як два різні агенти, а як
+один і той самий read-only аудит, викликаний у двох різних точках:
+
+- **Ґейт 1**, одразу після `implementer`, до `test-writer`/`architecture-reviewer` —
+  найдешевша перевірка в конвеєрі ловить `Missing`/`Partial` пункти плану
+  (включно з порушенням Owned paths) до того, як дорожчі кроки
+  (`test-writer` пише тести, `architecture-reviewer` читає весь diff)
+  витратяться на код, що ще не готовий. Пункти типу "Tests to run/add" на
+  цьому етапі очікувано можуть лишитись `Missing` — це нормально, якщо крок
+  `implementer`-а навмисно залишив тести `test-writer`-у (`implementer.md`
+  §6).
+- **Ґейт 2**, фінальний, після `test-writer`/`architecture-reviewer` —
+  підтверджує, що ті самі "Tests to run/add" пункти тепер закриті новими
+  тестами і що жодна правка не зламала traceability.
+
 ```mermaid
 flowchart LR
   ID["implementer<br/>(крок завершено)"]
   PL["implementation-planner<br/>Development Plan"]
+  PV1["plan-verifier<br/>ґейт 1 (read-only)"]
   TW["test-writer<br/>(write: лише тести)"]
   AR["architecture-reviewer<br/>(read-only)"]
-  PV["plan-verifier<br/>(read-only)"]
+  PV2["plan-verifier<br/>ґейт 2, фінальний (read-only)"]
   DW["doc-writer<br/>(write: лише docs/specs)"]
 
+  ID -- "реалізований код" --> PV1
+  PL -- "Development Plan" --> PV1
+  PV1 -. "Done/Partial → продовжити" .-> TW
+  PV1 -. "Done/Partial → продовжити" .-> AR
   ID -- "готовий код / diff" --> TW
-  ID -- "diff / модуль" --> AR
-  ID -- "реалізований код" --> PV
-  PL -- "Development Plan" --> PV
+  ID -- "diff / Owned paths кроку<br/>(не весь модуль)" --> AR
+  TW -- "нові тести" --> PV2
+  AR -- "фікси (за потреби)" --> PV2
+  PL -- "Development Plan" --> PV2
   ID -- "фіча" --> DW
   PL -- "план" --> DW
 ```
@@ -71,10 +92,10 @@ flowchart LR
 `Write` за назвою, не за шляхом), а промптом: `test-writer` пише лише
 `*.test.ts`/`*.test.tsx`/`*.it.test.ts`/`e2e/specs/*.flow.json`, `doc-writer`
 — лише `docs/`+`specs/`. Жоден із чотирьох не має `Agent` — вони не
-породжують інших агентів, як і всі інші три. `plan-verifier` додатково
-приймає план від `implementation-planner`, а не лише код від `implementer` — це
-maker-checker: він звіряє з самим планом, а не з переказом того, що зробив
-`implementer`.
+породжують інших агентів, як і всі інші три. `plan-verifier` в обох ґейтах
+приймає план від `implementation-planner`, а не лише код від `implementer` —
+це maker-checker: він звіряє з самим планом, а не з переказом того, що
+зробив `implementer`.
 
 ## Скіли за Type кроку
 
