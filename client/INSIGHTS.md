@@ -88,6 +88,18 @@ _None yet._
   the documented exception — don't repeat the instruction against a seam that
   isn't there.
 
+- **2026-08-23** — `src/components/app-shell/helpers.ts:29`'s `activeKeyFor`
+  matches the active nav key by `pathname.includes("/onboarding")`, a
+  substring test — so the add-repo wizard at `/onboarding` already resolves
+  to the `onboarding-tour` sidebar key today, even though no `NAV` entry uses
+  that key yet (harmless only because nothing currently highlights on it). Any
+  future per-repo route whose slug is a prefix/substring of an existing
+  top-level route (here, a real "Onboarding Tour" nav item under
+  `/repos/:repoId/onboarding`) needs a `startsWith("/repos/")`-style guard in
+  `activeKeyFor`, not `includes`, or it will mis-highlight the wrong item the
+  moment that nav item is added. Surfaced writing
+  `specs/02-onboarding-tour.md` (Open question 10).
+
 - **2026-08-20** — `useSmartDiff`'s `SmartDiffFile.finding_lines` is bare
   `number[]` (deduped line numbers, no severity/id/rationale) — it cannot
   drive a per-finding severity badge or an "open this finding" click target

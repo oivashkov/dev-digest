@@ -232,7 +232,19 @@ input but left responses unchecked, so contract drift surfaced in the browser.
 
 ## What Works
 
-_None yet._
+- **2026-08-23** — When a human resolves a `specreator` spec's "Open
+  questions" one by one (as happened for `specs/01-project-context.md`'s 13
+  gaps), do the full ripple for each question — its Open-questions entry
+  **and** every downstream Acceptance-criteria/Goals/Edge-case touchpoint it
+  affects — in one Edit pass, not two. Splitting them (mark "RESOLVED" first,
+  discover later that an AC also needed the same decision) roughly doubled
+  the Edit-call count for questions Q7, Q9, Q10, and Q13 in that session — a
+  `/workflow-retro` run over it counted ~28 Edit calls against one spec file
+  after the agent's single handoff. Read the whole spec once per question
+  before editing to find every place a decision needs to land, not just its
+  own Open-questions paragraph.
+
+
 
 ## What Doesn't Work
 
@@ -340,6 +352,16 @@ _None yet._
 
 ## Tool & Library Notes
 
+- **2026-08-23** — The `<total_tokens>N tokens left</total_tokens>` system
+  reminder attached to tool results is **not** a monotonically-decreasing
+  usage counter — it can jump back up between turns (context summarization/
+  compaction frees budget), so diffing "first seen" against "most recent"
+  across a whole session does not yield a trustworthy orchestrator-thread
+  token cost, only a same-turn or same-stretch approximation at best.
+  Discovered writing the `workflow-retro` skill (`.claude/skills/
+  workflow-retro/SKILL.md` §2), whose own orchestrator-cost method relies on
+  this diff — treat any number derived from it as directional within one
+  uninterrupted stretch of turns, never as a session-wide total.
 - **2026-08-06** — `server`'s hermetic vitest suite (`pnpm exec vitest run
   --exclude '**/*.it.test.ts'`) crashes the whole run intermittently on Node
   v24.4.0 with `RangeError: Maximum call stack size exceeded` inside

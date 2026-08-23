@@ -204,6 +204,15 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-23** — `RepoIntel.getCriticalPaths(repoId)` is implemented, not a
+  stub — but it returns `string[][]`, dependency **chains** seeded from
+  `CRITICAL_PATH_ROOTS = 5` top-ranked files and walked `BFS_DEPTH` hops along
+  `file_edges` (`repo-intel/service.ts:754-795`), not a flat list of
+  individually-important files. A UI wanting single annotated files (or a
+  "used by N routes" reverse-dependency count) needs a different read —
+  `references`/`file_edges` directly — this method will not produce that
+  shape. Surfaced writing `specs/02-onboarding-tour.md` (Open question 13),
+  whose screenshot showed exactly that mismatched shape.
 - **2026-08-20** — `RepoIntel.getBlastRadius`'s `BlastResult.callers` arrives
   at any consumer ALREADY capped to `MAX_CALLERS_PER_SYMBOL` (20) per
   `viaSymbol` — the facade's `capCallersPerSymbol` runs inside
