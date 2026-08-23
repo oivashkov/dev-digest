@@ -38,11 +38,16 @@ export function paginate<T>(items: T[], page?: number, pageSize?: number): Pagin
   };
 }
 
+/**
+ * `agent.provider` (the backing LLM vendor — `openai`/`anthropic`/
+ * `openrouter`) is deliberately dropped here — it's an internal
+ * implementation detail, not something a calling agent needs to pick or
+ * identify an agent by (that's `id`/`name`); see `mcp-server/INSIGHTS.md`.
+ */
 export function trimAgent(agent: Agent): AgentSummary {
   return {
     id: agent.id,
     name: agent.name,
-    provider: agent.provider,
     model: agent.model,
     enabled: agent.enabled,
     strategy: agent.strategy,
