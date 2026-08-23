@@ -269,6 +269,29 @@ _None yet._
   missing spread expression) before estimating how much work remains.
   `server/src/modules/reviews/run-executor.ts`,
   `reviewer-core/src/prompt.ts:85` (`assemblePrompt`).
+  **Second, larger instance confirmed 2026-08-23 while speccing Project
+  Context (`specs/01-project-context.md`)** — the same pattern spans FIVE
+  layers there, all present, none connected: the `SpecFile`/`IndexStatus` Zod
+  contracts (`vendor/shared/contracts/platform.ts:271-284`), client hooks
+  `useContextFiles`/`useReindexContext` already calling
+  `GET /repos/:repoId/context` + `POST /repos/:repoId/context/reindex`
+  (`client/src/lib/hooks/core.ts:123-138`), a fully-written i18n namespace
+  `client/messages/en/context.json` (naming `.devdigest/specs/` as the root),
+  the `code_chunks` table with an `embedding vector(1536)` column and a
+  `source: 'code'|'docs'|'spec'` enum (`server/src/db/schema/context.ts:31-47`),
+  and the engine's `specs` prompt slot rendering `## Project context` with
+  `wrapUntrusted` (`reviewer-core/src/prompt.ts:104,125`) plus
+  `RunTrace.specs_read` and the trace drawer UI that renders both
+  (`TraceBody.tsx:39-51,90-92`). **Zero** server routes implement
+  `/repos/:id/context`, **zero** writers touch `code_chunks`, and
+  `run-executor.ts:319` hardcodes `specs_read: []`. Two traps for whoever
+  builds it: the pre-existing contract is **repo**-scoped while agents/skills
+  are **workspace**-scoped, so "which repo does an attached path resolve
+  against" is a real design decision the scaffolding silently pre-answers;
+  and `client/messages/en/context.json` encodes a `.devdigest/specs/` layout
+  that conflicts with a repo-wide `specs/`+`docs/`+`INSIGHTS.md` reading.
+  Grep `messages/en/<ns>.json` and `lib/hooks/*` for a feature's namespace
+  before scoping it — the copy and the endpoints may already dictate a shape.
 - **2026-08-04** — `server/src/vendor/shared` and `client/src/vendor/shared`
   are two independent copies of `@devdigest/shared`, not a symlink or a build
   step — editing one does NOT update the other, and nothing fails loudly when
