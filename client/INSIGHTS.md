@@ -314,6 +314,28 @@ _None yet._
 
 ## Recurring Errors & Fixes
 
+- **2026-08-23** — A new tab that renders fine in isolation but "isn't
+  clickable" in the real page — click it, the URL's `?tab=` updates, then the
+  view silently snaps back to the first tab — means the *page-level*
+  `VALID_TABS` gate doesn't know the new key yet, not a click-handler bug.
+  `AgentEditorPageView.tsx`'s `tab` is computed as
+  `VALID_TABS.includes(search.get("tab")) ? search.get("tab") : "config"`; its
+  sibling `AgentEditorPageView/constants.ts` hardcoded
+  `VALID_TABS = ["config", "skills"]` **separately** from
+  `AgentEditor/constants.ts`'s `TABS` array, so adding a `"context"` entry to
+  `TABS` (SPEC-01 Project Context, Step 7) made the tab render and the click
+  handler fire, but the page-level gate rejected the URL value and reset it
+  every render. No test caught this because `ContextTab.test.tsx` renders the
+  tab component directly, bypassing `AgentEditorPageView`'s routing entirely —
+  isolated-component tests can't catch a page-level allowlist drift. **Fixed**
+  by deriving `VALID_TABS` from `TABS.map((tb) => tb.key)` in
+  `AgentEditor/constants.ts` and re-exporting it from
+  `AgentEditorPageView/constants.ts`, matching the pattern
+  `SkillEditor/constants.ts`/`SkillEditorPageView/constants.ts` already used
+  (which is why the equivalent Skill Editor Context section had no such bug).
+  Any new page with a `?tab=`-driven editor should derive its `VALID_TABS`
+  from the tab list, never hardcode a second copy.
+
 - **2026-08-01** — A vitest failure whose two sides look identical —
   `expected '9 119 tok' to be '9 119 tok'` — is a look-alike Unicode space, not
   an environment difference. `formatTokenCount` had a literal THIN SPACE

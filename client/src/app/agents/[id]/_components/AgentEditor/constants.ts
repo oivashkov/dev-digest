@@ -13,3 +13,9 @@ export const TABS: readonly EditorTab[] = [
   { key: "skills", labelKey: "editor.tabs.skills", icon: "Sparkles" },
   { key: "context", labelKey: "editor.tabs.context", icon: "FileText" },
 ];
+
+/** Derived from TABS so a new tab is valid the moment it's added here — see
+ *  SkillEditor/constants.ts's identical pattern. AgentEditorPageView used to
+ *  hardcode this list separately and missed "context" when the Context tab
+ *  was added, silently bouncing the tab back to "config" on click. */
+export const VALID_TABS: readonly string[] = TABS.map((tb) => tb.key);

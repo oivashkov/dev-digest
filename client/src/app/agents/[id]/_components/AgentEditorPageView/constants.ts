@@ -1,1 +1,1 @@
-export const VALID_TABS = ["config", "skills"];
+export { VALID_TABS } from "../AgentEditor/constants";
