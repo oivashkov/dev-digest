@@ -44,6 +44,7 @@ Drizzle ORM + Postgres (pgvector) · Zod · Vitest · agent-browser (e2e)
 | Client          | `cd client && pnpm dev \| build \| typecheck \| test`      |
 | Engine          | `cd reviewer-core && npm test \| npm run typecheck`        |
 | E2E (hermetic)  | `cd e2e && npm run e2e:hermetic`                            |
+| MCP server      | `cd mcp-server && npm run dev \| build \| typecheck \| test` |
 
 Flags for `dev.sh`: `--no-seed` · `--no-client` · `--db-only` · `--help`.
 
@@ -55,14 +56,15 @@ Flags for `dev.sh`: `--no-seed` · `--no-client` · `--db-only` · `--help`.
 | `client/`                   | Next.js studio, App Router                                |
 | `reviewer-core/`            | Pure engine: diff + repo map → prompt → LLM → findings    |
 | `e2e/`                      | Deterministic browser flows, no LLM                       |
+| `mcp-server/`               | Local stdio MCP server — thin HTTP client to `server/`'s API for MCP tool clients |
 | `server/src/vendor/shared/` | `@devdigest/shared` — Zod contracts for every package     |
 | `client/src/vendor/ui/`     | `@devdigest/ui` — vendored UI primitives                  |
 
 ## Conventions (non-default — you cannot infer these from the code)
 
 - **Not a monorepo workspace.** Each package has its own `package.json` and its
-  own lockfile. `server/` + `client/` use **pnpm**; `reviewer-core/` + `e2e/` use
-  **npm**. Never run the wrong package manager in a package.
+  own lockfile. `server/` + `client/` use **pnpm**; `reviewer-core/` + `e2e/` +
+  `mcp-server/` use **npm**. Never run the wrong package manager in a package.
 - Cross-package imports resolve through **tsconfig path aliases**, not published
   modules. `reviewer-core` is consumed as TypeScript **source** and never emits
   JS — its `build` is a typecheck.
@@ -101,4 +103,6 @@ Flags for `dev.sh`: `--no-seed` · `--no-client` · `--db-only` · `--help`.
 - Read `reviewer-core/README.md` when touching prompt assembly, structured
   output, or the grounding gate.
 - Read `e2e/README.md` before writing or debugging a browser flow.
+- Read `mcp-server/README.md` and `mcp-server/docs/architecture.md` when
+  adding or changing an MCP tool.
 - Read `INSIGHTS.md` at repo root for decisions that span more than one package.

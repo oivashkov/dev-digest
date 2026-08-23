@@ -220,6 +220,18 @@ _None yet._
 
 ## Recurring Errors & Fixes
 
+- **2026-08-20** — `.mcp.json`'s `devdigest` stdio server failed to (re)connect
+  (`/mcp` reports `-32000`) even though the API and Postgres were both healthy.
+  Cause: `command` pointed at nvm's `npm` by absolute path, but the MCP client
+  spawns it with a minimal environment whose `PATH` excludes nvm's node bin
+  dir — `npm-cli.js`'s own `#!/usr/bin/env node` shebang then can't resolve
+  `node`, failing with `env: node: No such file or directory` before it ever
+  reaches `mcp-server/`. An absolute `command` path is not enough; the child
+  process's own shebang resolution still needs `node` on `PATH`. Fix: add an
+  explicit `env.PATH` to that server's `.mcp.json` entry, e.g. `"PATH":
+  "/Users/o.ivashkov/.nvm/versions/node/v24.4.0/bin:/usr/local/bin:/usr/bin:/bin"`.
+  Apply the same fix to any future stdio MCP server config in this repo that
+  shells out to `node`/`npm`. `.mcp.json`.
 - **2026-08-06** — Reading files before `git checkout <branch>` (or a
   `git reset --hard` onto a moved remote branch) and writing their (mentally
   cached) content afterward can silently carry over content that only existed

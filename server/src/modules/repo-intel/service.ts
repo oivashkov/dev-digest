@@ -28,10 +28,15 @@ import {
 } from '../../adapters/astgrep/index.js';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { RepoIntelRepository, type FullSymbolRow } from './repository.js';
+import {
+  RepoIntelRepository,
+  type FullSymbolRow,
+  type IndexerFileFactsRow,
+} from './repository.js';
 import type {
   BlastCallerRow,
   BlastChangedSymbol,
+  BlastDownstreamFile,
   BlastResult,
   FileRankRow,
   IndexResult,
@@ -48,6 +53,7 @@ import {
   INDEX_JOB_KIND,
   INDEXER_VERSION,
   MAX_CALLERS_PER_SYMBOL,
+  MAX_REVERSE_FANOUT_PER_LEVEL,
   REFRESH_JOB_KIND,
   RESYNC_JOB_KIND,
   SUPPORTED_EXT,
@@ -229,6 +235,8 @@ export class RepoIntelService implements RepoIntel {
       changedSymbols: [],
       callers: [],
       impactedEndpoints: [],
+      impactedCrons: [],
+      downstreamFiles: [],
       degraded: true,
       reason: 'no_data',
     };
@@ -296,8 +304,15 @@ export class RepoIntelService implements RepoIntel {
 
     return {
       changedSymbols,
-      callers: callerRows,
+      // Same per-symbol cap as the persistent path (item 5 of the blast-radius
+      // plan): a global slice would starve every symbol but the top-ranked one.
+      callers: capCallersPerSymbol(callerRows, MAX_CALLERS_PER_SYMBOL),
       impactedEndpoints: [...endpoints],
+      // Honest, not simulated: this path never reads `file_edges` (ripgrep has
+      // no import graph), so there is no reverse-import walk to report and no
+      // cron detection here — an empty array, not a best-effort guess.
+      impactedCrons: [],
+      downstreamFiles: [],
       degraded: true,
       reason: 'no_data',
     };
@@ -334,8 +349,27 @@ export class RepoIntelService implements RepoIntel {
       }
       nameSet.add(s.name);
     }
+    // 2-level reverse-import walk (`file_edges` fan-in) — independent of
+    // whether the changed files declare any symbol at all. A router file with
+    // no exported symbol can still depend, one import away, on a changed
+    // helper file that has zero direct symbol-level callers; the 1-hop
+    // caller-file logic below would miss it entirely.
+    const downstream = await this.walkDownstreamFiles(repoId, changedFiles);
+    const downstreamFileNames = downstream.files.map((d) => d.file);
+
     if (nameSet.size === 0) {
-      return { changedSymbols, callers: [], impactedEndpoints: [], degraded: false };
+      const facts = await this.repo.getFileFacts(repoId, downstreamFileNames);
+      const { endpoints, crons, factsByFile } = collectFacts(facts);
+      return {
+        changedSymbols,
+        callers: [],
+        impactedEndpoints: [...endpoints],
+        impactedCrons: [...crons],
+        downstreamFiles: downstream.files,
+        truncated: downstream.truncated,
+        factsByFile,
+        degraded: false,
+      };
     }
 
     // Resolved cross-file callers.
@@ -371,23 +405,80 @@ export class RepoIntelService implements RepoIntel {
     }
     callers.sort((a, b) => b.rank - a.rank);
 
-    // Precomputed facts per caller file (endpoints + crons), so consumers can
-    // attribute them to the changed symbol whose callers live in that file.
-    const facts = await this.repo.getFileFacts(repoId, callerFiles);
-    const endpoints = new Set<string>();
-    const factsByFile: Record<string, { endpoints: string[]; crons: string[] }> = {};
-    for (const f of facts) {
-      factsByFile[f.filePath] = { endpoints: f.endpoints, crons: f.crons };
-      for (const e of f.endpoints) endpoints.add(e);
-    }
+    // Precomputed facts (endpoints + crons) for BOTH the 1-hop symbol-caller
+    // files AND the 2-level reverse-import files, so a file gets counted as
+    // impacted whichever route found it. `impactedEndpoints`/`impactedCrons`
+    // is the union across the two — a file present in both isn't double-counted
+    // (Set dedup) and its facts still attribute to `factsByFile` once.
+    const factFiles = [...new Set([...callerFiles, ...downstreamFileNames])];
+    const facts = await this.repo.getFileFacts(repoId, factFiles);
+    const { endpoints, crons, factsByFile } = collectFacts(facts);
 
     return {
       changedSymbols,
-      callers: callers.slice(0, MAX_CALLERS_PER_SYMBOL),
+      // Per CHANGED SYMBOL, not globally — grouping by `viaSymbol` before
+      // slicing is what makes a PR touching 10 symbols show callers for all
+      // 10, not just the highest-ranked one (see MAX_CALLERS_PER_SYMBOL's
+      // doc comment in constants.ts).
+      callers: capCallersPerSymbol(callers, MAX_CALLERS_PER_SYMBOL),
       impactedEndpoints: [...endpoints],
+      impactedCrons: [...crons],
+      downstreamFiles: downstream.files,
+      truncated: downstream.truncated,
       factsByFile,
       degraded: false,
     };
+  }
+
+  /**
+   * BFS exactly `BFS_DEPTH` levels backwards over `file_edges` (importer →
+   * imported), seeded from `changedFiles`. Each level: `getImporters` (hits
+   * `file_edges_repo_to_idx`, O(fan-in) — never `getEdges()`, which reads the
+   * whole graph) → dedup against the global `visited` set (changed files are
+   * pre-seeded into `visited` so they're excluded from the result AND can't
+   * be re-discovered as their own importer) → sort by rank DESC → cut to
+   * `MAX_REVERSE_FANOUT_PER_LEVEL`, flagging `truncated` when a level was cut.
+   * A truncated level still seeds the NEXT level (from its surviving,
+   * highest-ranked files) rather than stopping the walk early.
+   */
+  private async walkDownstreamFiles(
+    repoId: string,
+    changedFiles: string[],
+  ): Promise<{ files: BlastDownstreamFile[]; truncated: boolean }> {
+    const visited = new Set<string>(changedFiles);
+    const result: BlastDownstreamFile[] = [];
+    let truncated = false;
+    let frontier = changedFiles;
+
+    for (let depth = 1; depth <= BFS_DEPTH && frontier.length > 0; depth += 1) {
+      const importers = await this.repo.getImporters(repoId, frontier);
+
+      // One `fromFile` can import several files in `frontier` — the LEFT JOIN
+      // can then repeat it with the same rank; dedup before sorting/cutting.
+      const byFile = new Map<string, number>();
+      for (const imp of importers) {
+        if (visited.has(imp.fromFile)) continue;
+        const prev = byFile.get(imp.fromFile);
+        if (prev === undefined || imp.rank > prev) byFile.set(imp.fromFile, imp.rank);
+      }
+
+      let level = [...byFile.entries()]
+        .map(([file, rank]) => ({ file, rank }))
+        .sort((a, b) => b.rank - a.rank);
+
+      if (level.length > MAX_REVERSE_FANOUT_PER_LEVEL) {
+        level = level.slice(0, MAX_REVERSE_FANOUT_PER_LEVEL);
+        truncated = true;
+      }
+
+      for (const { file, rank } of level) {
+        visited.add(file);
+        result.push({ file, depth, rank });
+      }
+      frontier = level.map((l) => l.file);
+    }
+
+    return { files: result, truncated };
   }
 
   /**
@@ -738,6 +829,48 @@ function enclosingFromRows(rows: FullSymbolRow[], line: number): string | null {
     .filter((s) => !s.name.includes('.') && (s.line ?? 0) <= line)
     .sort((a, b) => (b.line ?? 0) - (a.line ?? 0))[0];
   return hit?.name ?? null;
+}
+
+/**
+ * Fold `getFileFacts` rows into blast's three shapes at once: the flat
+ * endpoint/cron unions (`impactedEndpoints`/`impactedCrons`) and the
+ * per-file breakdown (`factsByFile`) consumers use to attribute a fact back
+ * to the changed symbol whose caller/downstream file it came from.
+ */
+function collectFacts(facts: IndexerFileFactsRow[]): {
+  endpoints: Set<string>;
+  crons: Set<string>;
+  factsByFile: Record<string, { endpoints: string[]; crons: string[] }>;
+} {
+  const endpoints = new Set<string>();
+  const crons = new Set<string>();
+  const factsByFile: Record<string, { endpoints: string[]; crons: string[] }> = {};
+  for (const f of facts) {
+    factsByFile[f.filePath] = { endpoints: f.endpoints, crons: f.crons };
+    for (const e of f.endpoints) endpoints.add(e);
+    for (const c of f.crons) crons.add(c);
+  }
+  return { endpoints, crons, factsByFile };
+}
+
+/**
+ * Cap callers to `cap` PER `viaSymbol` (changed symbol), not globally.
+ * `MAX_CALLERS_PER_SYMBOL`'s doc comment says "per changed symbol" — a plain
+ * `callers.slice(0, cap)` on the whole array instead starves every symbol but
+ * the highest-ranked one when a PR touches more than `cap / (callers per
+ * symbol)` symbols. Assumes `callers` is already sorted by rank DESC so each
+ * symbol's group keeps its highest-ranked rows.
+ */
+function capCallersPerSymbol(callers: BlastCallerRow[], cap: number): BlastCallerRow[] {
+  const byViaSymbol = new Map<string, BlastCallerRow[]>();
+  for (const c of callers) {
+    const group = byViaSymbol.get(c.viaSymbol);
+    if (group) group.push(c);
+    else byViaSymbol.set(c.viaSymbol, [c]);
+  }
+  const out: BlastCallerRow[] = [];
+  for (const group of byViaSymbol.values()) out.push(...group.slice(0, cap));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
