@@ -33,8 +33,19 @@ export const OnboardingLink = z.object({
 });
 export type OnboardingLink = z.infer<typeof OnboardingLink>;
 
+// Fixed for v1 (SPEC-02 Q3) — the five canonical section keys, in persisted
+// order. NOT per-repo configurable.
+export const OnboardingSectionKind = z.enum([
+  'architecture',
+  'critical_paths',
+  'local_setup',
+  'reading_path',
+  'first_tasks',
+]);
+export type OnboardingSectionKind = z.infer<typeof OnboardingSectionKind>;
+
 export const OnboardingSection = z.object({
-  kind: z.string(),
+  kind: OnboardingSectionKind,
   title: z.string(),
   body: z.string(), // markdown
   diagram: z.string().nullish(), // mermaid
@@ -46,6 +57,35 @@ export const Onboarding = z.object({
   sections: z.array(OnboardingSection),
 });
 export type Onboarding = z.infer<typeof Onboarding>;
+
+// Precedence when more than one condition applies (highest first):
+// not_indexed > generating > partial > ready > failed > empty.
+export const OnboardingStatus = z.enum([
+  'empty',
+  'generating',
+  'ready',
+  'partial',
+  'failed',
+  'not_indexed',
+]);
+export type OnboardingStatus = z.infer<typeof OnboardingStatus>;
+
+// GET /repos/:id/onboarding
+export const OnboardingState = z.object({
+  tour: Onboarding.nullable(),
+  status: OnboardingStatus,
+  generated_at: z.string().nullable(),
+  files_indexed: z.number().int(),
+});
+export type OnboardingState = z.infer<typeof OnboardingState>;
+
+// POST /repos/:id/onboarding/generate → 202
+export const OnboardingGenerateAccepted = z.object({
+  status: z.literal('accepted'),
+  job_id: z.string().nullish(),
+  degraded: z.boolean().optional(),
+});
+export type OnboardingGenerateAccepted = z.infer<typeof OnboardingGenerateAccepted>;
 
 // ---- Eval ----
 export const EvalPerTrace = z.object({

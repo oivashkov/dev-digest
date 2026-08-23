@@ -26,7 +26,10 @@ export function isTextInput(el: EventTarget | null): boolean {
 export function activeKeyFor(pathname: string): string {
   if (pathname.startsWith("/settings")) return "settings";
   if (pathname.includes("/multi-agent")) return "multi-agent";
-  if (pathname.includes("/onboarding")) return "onboarding-tour";
+  // Repo-scoped Onboarding Tour (/repos/:repoId/onboarding) only — NOT the
+  // add-repo wizard at the top-level /onboarding, which `includes` alone
+  // would also match (client/INSIGHTS.md, 2026-08-23).
+  if (pathname.startsWith("/repos/") && pathname.includes("/onboarding")) return "onboarding-tour";
   if (pathname.includes("/context")) return "context";
   if (pathname.includes("/conventions")) return "conventions";
   if (pathname.includes("/pulls")) return "pulls";

@@ -1,15 +1,33 @@
 {
   "title": "Onboarding Tour",
-  "sections": "Sections",
-  "sectionCount": "{count} sections",
+  "subtitle": "A grounded, five-section orientation to this repo — generated from what DevDigest has already indexed.",
+  "headerMeta": "{count} files indexed · generated {time}",
+  "neverGenerated": "never generated",
   "regenerate": "Regenerate",
   "regenerating": "Regenerating…",
+  "shareLink": "Share link",
+  "linkCopied": "Link copied",
+  "copySetup": "Copy commands",
+  "copied": "Copied",
   "unknownError": "Unknown error",
+  "rail": {
+    "title": "Sections"
+  },
   "generate": {
     "title": "Generate onboarding tour",
-    "body": "DevDigest indexes the repo and specs, then writes a 5-section guided tour: overview, architecture, key modules, getting started, and conventions & gotchas.",
+    "body": "DevDigest reads this repo's indexed structure and writes a five-section guided tour: architecture overview, critical paths, how to run locally, a guided reading path, and first tasks.",
     "cta": "Generate onboarding tour",
     "generating": "Generating…"
+  },
+  "notIndexed": {
+    "title": "Repo is not indexed yet",
+    "body": "The onboarding tour needs an indexed repo to ground itself in facts. Index this repo, then come back."
+  },
+  "partial": {
+    "note": "This tour is incomplete — the model returned fewer than five sections. Regenerate to try again."
+  },
+  "failed": {
+    "body": "The last generation attempt failed. Try regenerating the tour."
   },
   "loadError": {
     "title": "Couldn’t load the onboarding tour"

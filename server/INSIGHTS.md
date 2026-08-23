@@ -103,7 +103,44 @@ dedup logic exists in v1, so repeated scans would accumulate near-duplicate
 candidates indefinitely). `src/modules/conventions/{routes,service
 ,repository}.ts`.
 
+### 2026-08-23 — Onboarding generation: permissive LLM schema, strict persistence schema — two Zod schemas for one feature, not one
+
+**What:** `onboarding/prompt.ts`'s `OnboardingGenerationSchema` (the
+`completeStructured` boundary) is deliberately permissive — `kind:
+z.string()`, uncapped `links` — while the shared `@devdigest/shared`
+`Onboarding` contract keeps the narrowed 5-value `kind` enum and is only
+`.parse()`d in `service.ts` AFTER `helpers.ts#normalizeTour` has discarded
+bad `kind`s, deduped, capped links to 4, and filtered unindexed paths.
+**Why:** SPEC-02's ACs require PER-SECTION salvage ("discard that section",
+"persist the sections it did return", "persist at most 4 links") — a strict
+`z.enum` at the structured-output boundary fails the WHOLE parse (all 5
+sections) on one hallucinated `kind`, which a per-section discard rule
+cannot survive.
+**Rejected:** reusing the shared `Onboarding` contract itself as the
+`completeStructured` schema, the way `ConventionExtractionSchema` mirrors
+`ConventionCandidate` 1:1 (`conventions/prompt.ts`). That precedent works
+there because conventions has no discard/truncate AC — a convention
+candidate is either well-formed or dropped whole-array-wise on a schema
+mismatch, which is acceptable for that feature but not for a 5-section
+document where losing all 5 over 1 bad `kind` fails the "partial" AC
+outright. Any future feature with a similar "salvage what's valid, cap the
+rest" AC should copy THIS split, not the conventions 1:1 pattern.
+`src/modules/onboarding/{prompt,helpers,service}.ts`.
+
 ## What Works
+
+- **2026-08-23** — A `GET` fired immediately after `container.jobs.enqueue()`
+  resolves (no `setTimeout`/fake timer) reliably observes the job's
+  transitional status (`queued`/`running` → derived `generating`), because
+  `enqueue()` only awaits the DB insert before returning — the `p-queue`
+  callback that flips the row to `running` and calls the handler is
+  scheduled via `queue.add()` but not awaited, so it hasn't run yet at the
+  point the HTTP response is sent. `test/onboarding.it.test.ts`'s "GET
+  reports generating" assertion (right after the POST, before any
+  `jobs.onIdle()`) passed deterministically, unforced, across every run.
+  Don't add an artificial delay to "wait for the job to start" in a test
+  like this — the race is already in the test's favor. `src/platform/jobs.ts`
+  (`JobRunner.enqueue`).
 
 _None yet._
 

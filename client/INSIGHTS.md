@@ -105,7 +105,13 @@ _None yet._
   `/repos/:repoId/onboarding`) needs a `startsWith("/repos/")`-style guard in
   `activeKeyFor`, not `includes`, or it will mis-highlight the wrong item the
   moment that nav item is added. Surfaced writing
-  `specs/02-onboarding-tour.md` (Open question 10).
+  `specs/02-onboarding-tour.md` (Open question 10). **Fixed 2026-08-23 in
+  `client/src/components/app-shell/helpers.ts`** (SPEC-02 Step 6) — guarded
+  to `pathname.startsWith("/repos/") && pathname.includes("/onboarding")`,
+  and the real "Onboarding Tour" nav item now lives under WORKSPACE in
+  `nav.ts`. Verified against a booted `pnpm dev`: the sidebar icon renders
+  `style="color:var(--accent)"` on `/repos/:id/onboarding` and
+  `style="color:inherit"` on `/repos/:id/pulls`.
 
 - **2026-08-20** — `useSmartDiff`'s `SmartDiffFile.finding_lines` is bare
   `number[]` (deduped line numbers, no severity/id/rationale) — it cannot

@@ -9,6 +9,8 @@ import {
   SmartDiff,
   Conformance,
   Onboarding,
+  OnboardingState,
+  OnboardingGenerateAccepted,
   EvalRun,
   MemoryItem,
   RunTrace,
@@ -154,6 +156,25 @@ describe('AI contracts parse fixtures', () => {
         confidence: 0.92,
         sources: [{ pr: 401, context: 'ctx' }],
       }),
+    ).not.toThrow();
+  });
+
+  it('OnboardingSection rejects an out-of-enum kind; OnboardingState round-trips a null tour', () => {
+    expect(() =>
+      Onboarding.parse({
+        sections: [{ kind: 'routes_and_apis', title: 'T', body: 'b', links: [] }],
+      }),
+    ).toThrow();
+    expect(() =>
+      OnboardingState.parse({
+        tour: null,
+        status: 'empty',
+        generated_at: null,
+        files_indexed: 0,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      OnboardingGenerateAccepted.parse({ status: 'accepted', job_id: 'j1' }),
     ).not.toThrow();
   });
 
