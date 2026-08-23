@@ -46,7 +46,7 @@ describe('McpService.listAgents', () => {
 
     expect(result).toEqual({
       ok: true,
-      data: { agents: [{ id: 'a1', name: 'Reviewer', provider: 'openai', model: 'gpt-4o', enabled: true, strategy: 'single-pass' }] },
+      data: { agents: [{ id: 'a1', name: 'Reviewer', model: 'gpt-4o', enabled: true, strategy: 'single-pass' }] },
     });
   });
 

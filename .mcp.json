@@ -2,16 +2,17 @@
   "mcpServers": {
     "devdigest": {
       "type": "stdio",
-      "command": "/Users/o.ivashkov/.nvm/versions/node/v24.4.0/bin/npm",
+      "command": "/Users/o.ivashkov/.nvm/versions/node/v24.4.0/bin/node",
       "args": [
-        "--prefix",
-        "mcp-server",
-        "start",
-        "--silent"
+        "--import",
+        "/Users/o.ivashkov/projects/private/dev-digest/mcp-server/node_modules/tsx/dist/loader.mjs",
+        "/Users/o.ivashkov/projects/private/dev-digest/mcp-server/src/index.ts"
       ],
       "env": {
-        "PATH": "/Users/o.ivashkov/.nvm/versions/node/v24.4.0/bin:/usr/local/bin:/usr/bin:/bin"
-      }
+        "PATH": "/Users/o.ivashkov/.nvm/versions/node/v24.4.0/bin:/usr/local/bin:/usr/bin:/bin",
+        "TSX_TSCONFIG_PATH": "/Users/o.ivashkov/projects/private/dev-digest/mcp-server/tsconfig.json"
+      },
+      "timeout": 125000
     }
   }
 }

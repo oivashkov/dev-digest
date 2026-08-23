@@ -29,6 +29,22 @@ Formats — `Decisions` takes prose; every other section takes a dated bullet:
 
 ## Decisions
 
+### 2026-08-23 — `list_agents` drops `agent.provider` from its output
+
+**What:** `AgentSummary` (`src/service/results.ts`) and `trimAgent`
+(`src/service/shape.ts`) no longer carry `provider`
+(`openai`/`anthropic`/`openrouter`) — `list_agents` now returns only `id`,
+`name`, `model`, `enabled`, `strategy`.
+**Why:** a PR reviewer flagged it as an internal implementation detail an
+MCP tool response shouldn't surface: a calling agent picks/identifies an
+agent by `id`/`name` (per `SERVER_INSTRUCTIONS` in `src/server.ts`), never
+by which LLM vendor backs it — every extra field is tokens spent in the
+calling model's context for no decision it needs to make.
+**Rejected:** keeping `provider` per `specs/mcp-server-plan.md` §5 Step 4's
+original tool contract (`{ id, name, provider, model, enabled, strategy }`)
+— that plan is now stale on this one field; left unedited as historical
+record rather than revised.
+
 ### 2026-08-19 — `run_agent_on_pr` always polls; the plan's "synchronous review" assumption was wrong
 
 **What:** `McpService.runAgentOnPr` (`src/service/index.ts`) never treats
@@ -100,6 +116,28 @@ _None yet._
 
 ## Tool & Library Notes
 
+- **2026-08-23** — Claude Code's `.mcp.json` stdio server entry DOES accept a
+  top-level `"timeout"` field (milliseconds) — confirmed empirically, not
+  from docs: `claude mcp add-json <name> '{...,"timeout":5000}' -s local`
+  then `claude mcp get <name>` prints `Timeout: 5000ms`. Root `.mcp.json`'s
+  `devdigest` entry sets `"timeout": 125000` — just above
+  `MCP_HARD_TIMEOUT_MS`'s default 120000 — so `run_agent_on_pr`'s own poll
+  budget can't be cut short by Claude Code's own tool-call timeout. A
+  `"cwd"` field, by contrast, is silently ignored: a stdio server always
+  spawns with the launching process's cwd (verified by spawning `pwd` from
+  a configured server and reading its output — it printed the project root,
+  not the configured `"cwd"`), regardless of what `"cwd"` says. `.mcp.json`.
+- **2026-08-23** — Because `.mcp.json`'s `"cwd"` is a no-op (see above),
+  invoking `mcp-server` directly via `node --import <tsx-loader> src/index.ts`
+  (bypassing `npm --prefix mcp-server start`, which used to shift cwd to
+  `mcp-server/` as a side effect of `--prefix`) breaks tsx's
+  `tsconfig.json` `paths` alias resolution for `@devdigest/shared` — tsx
+  walks up from `process.cwd()` to find the nearest `tsconfig.json`, not
+  from the entry file's own directory, so without a cwd shift it finds none
+  and throws `ERR_MODULE_NOT_FOUND: Cannot find package '@devdigest/shared'`.
+  Fix: set `TSX_TSCONFIG_PATH` explicitly to the absolute path of
+  `mcp-server/tsconfig.json` in the server's `env` — tsx then skips the
+  cwd-relative search entirely. `.mcp.json`.
 - **2026-08-21** — `tsconfig.json`'s `include: ["src/**/*.ts"]` does NOT
   exempt `test/helpers/*.ts` from `npm run typecheck` — `tsc` treats
   `include` only as the *root* file set; any file transitively imported by a

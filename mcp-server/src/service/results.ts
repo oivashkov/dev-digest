@@ -127,7 +127,6 @@ export async function guardApiCall<T>(fn: () => Promise<T>): Promise<ServiceResu
 export interface AgentSummary {
   id: string;
   name: string;
-  provider: string;
   model: string;
   enabled: boolean;
   strategy: string;

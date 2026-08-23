@@ -23,7 +23,7 @@ no layer-skipping.**
 | Presentation — `modules/<name>/routes.ts` | `src/tools/*.ts` | Declares the MCP `inputSchema`/`annotations`/`description`; the handler calls **exactly one** `service.*` method and maps the returned typed result to MCP content blocks / `isError`. No `fetch`, no resolution logic, no trimming/pagination inline. |
 | Application / domain — `service.ts` | `src/service/**` (`index.ts`'s `McpService` facade, `resolve.ts`, `shape.ts`, `results.ts`) | Repo/PR/agent resolution, the run+poll+timeout-fallback orchestration for `run_agent_on_pr`, and all trim/pagination shaping. **MUST NOT import `@modelcontextprotocol/sdk`** — the MCP-boundary equivalent of "`service.ts` MUST NOT import `FastifyInstance`/`FastifyRequest`". Plain arguments in, a typed `ServiceResult<T>` (success/failure ADT) out — testable with zero MCP machinery. |
 | Infrastructure — ports & adapters — `src/adapters/*` | `src/http/client.ts` (+ `errors.ts`, `types.ts`) | The **only** place a `fetch` to the DevDigest API happens — the single port to the external system, implementing the `DevDigestApiPort` interface declared in `http/types.ts` (mirrors `@devdigest/shared/adapters.ts`'s port-interface pattern). Called only from `src/service/**`, never from `src/tools/*`. Swappable for `test/helpers/mock-api-client.ts` in tests. |
-| Composition root — `platform/container.ts` | `src/server.ts` | The one place that wires the HTTP client into the service and the service into the registered tool descriptors. The only module that knows every layer at once. `src/index.ts` is the executable entry (stdio transport wiring) on top of it. |
+| Composition root — `platform/container.ts` | `src/server.ts` | The one place that wires the HTTP client into the service and the service into the registered tool descriptors. The only module that knows every layer at once. `createServer(client?: DevDigestApiPort)` takes the port as an optional param — same DI seam as `McpService`'s own constructor — defaulting to a real `DevDigestApiClient` built from `loadConfig()` when omitted; `index.ts` (the executable entry, stdio transport wiring) always omits it. |
 | Shared kernel — `@devdigest/shared` contracts | same, via tsconfig `paths` alias | Domain contracts (`Agent`, `Finding`, `ReviewRecord`, `RunSummary`, …) reused read-only; never redeclared locally. |
 
 ## Dependency direction (MUST)
@@ -44,7 +44,12 @@ src/tools/*.ts  →  src/service/**  →  src/http/client.ts
 - `src/service/index.ts`'s `McpService` is constructed with a
   `DevDigestApiPort` (an interface, not the concrete `DevDigestApiClient`)
   plus a plain `McpServiceOptions` policy object — the DI seam that tests
-  swap for a mock.
+  swap for a mock. `src/server.ts`'s `createServer()` carries the same seam
+  one layer up: it takes an optional `client: DevDigestApiPort` param
+  instead of always constructing the real `DevDigestApiClient` internally,
+  so a test can drive a real registered tool handler end-to-end
+  (`McpServer` → `McpService` → port) against a mock, not just introspect
+  what got registered.
 
 ## Thin HTTP client design
 
@@ -137,8 +142,10 @@ instead of throwing. `message` is always written as the next thing a
 calling agent should do (e.g. "start it with `./scripts/dev.sh`", "call
 list_agents to see available agents"), never a bare diagnostic. Presentation
 (`src/tools/types.ts`'s `toolSuccess`/`toolFailure`) maps this 1:1 onto MCP
-content: success → one `text` block of pretty-JSON data, failure → one
-`text` block with `failure.message` verbatim and `isError: true`.
+content: success → one `text` block of **compact** (non-pretty-printed) JSON
+data — this text lands directly in the calling model's context window, so
+indentation/newlines would be pure token waste — failure → one `text` block
+with `failure.message` verbatim and `isError: true`.
 
 ## Testing shape
 

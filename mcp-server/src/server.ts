@@ -2,6 +2,7 @@ import type { z, ZodRawShape } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { loadConfig } from './config.js';
 import { DevDigestApiClient } from './http/client.js';
+import type { DevDigestApiPort } from './http/types.js';
 import { McpService } from './service/index.js';
 import { makeGetBlastRadiusTool } from './tools/get-blast-radius.js';
 import { makeGetConventionsTool } from './tools/get-conventions.js';
@@ -67,16 +68,24 @@ don't call it speculatively.`;
  *
  * Exported (rather than only called from `index.ts`) so Step 7's tests can
  * construct a server without going through real stdio.
+ *
+ * `client` is an optional `DevDigestApiPort` (the same DI seam
+ * `McpService`'s own constructor uses, per `docs/architecture.md`) — tests
+ * inject a mock port here instead of only being able to smoke-test tool
+ * registration against the real `DevDigestApiClient`. Omitted in production
+ * (`index.ts`'s call), where the real client is built from `loadConfig()`.
  */
-export function createServer(): McpServer {
+export function createServer(client?: DevDigestApiPort): McpServer {
   const config = loadConfig();
 
-  const client = new DevDigestApiClient({
-    baseUrl: config.apiBaseUrl,
-    requestTimeoutMs: config.requestTimeoutMs,
-  });
+  const apiClient =
+    client ??
+    new DevDigestApiClient({
+      baseUrl: config.apiBaseUrl,
+      requestTimeoutMs: config.requestTimeoutMs,
+    });
 
-  const service = new McpService(client, {
+  const service = new McpService(apiClient, {
     pollIntervalMs: config.pollIntervalMs,
     hardTimeoutMs: config.hardTimeoutMs,
   });

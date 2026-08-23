@@ -51,13 +51,16 @@ export interface McpToolDescriptor<Args extends ZodRawShape> {
 
 /**
  * Maps a successful `ServiceResult`'s `data` payload to MCP content — a
- * single `text` block carrying the concise structured payload as pretty
- * JSON. Every tool handler's success path funnels through this so the
- * mapping (step 3 of the presentation contract, per the plan's Step 4) is
- * identical across all five tools.
+ * single `text` block carrying the concise structured payload as compact
+ * (non-pretty-printed) JSON. Every tool handler's success path funnels
+ * through this so the mapping (step 3 of the presentation contract, per the
+ * plan's Step 4) is identical across all five tools. Compact, not
+ * `JSON.stringify(data, null, 2)`: this text goes straight into the calling
+ * model's context window, and indentation/newlines are tokens spent on
+ * formatting a model doesn't need to parse JSON — see `mcp-server/INSIGHTS.md`.
  */
 export function toolSuccess(data: unknown): McpToolHandlerResult {
-  return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  return { content: [{ type: 'text', text: JSON.stringify(data) }] };
 }
 
 /**
