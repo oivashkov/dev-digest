@@ -23,6 +23,12 @@ export const NAV: NavGroup[] = [
     section: "WORKSPACE",
     items: [
       { key: "pulls", label: "Pull Requests", icon: "GitPullRequest", href: "/repos/:repoId/pulls", gKey: "p" },
+      {
+        key: "context",
+        label: "Project Context",
+        icon: "FileText",
+        href: "/repos/:repoId/context",
+      },
     ],
   },
   {
@@ -36,12 +42,6 @@ export const NAV: NavGroup[] = [
         icon: "ListChecks",
         href: "/repos/:repoId/conventions",
         gKey: "c",
-      },
-      {
-        key: "context",
-        label: "Project Context",
-        icon: "FileText",
-        href: "/repos/:repoId/context",
       },
     ],
   },

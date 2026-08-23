@@ -581,18 +581,50 @@ clean typecheck. This snapshots *paths*, not content, so a replay still reads
 whatever the files say today — full reproducibility would require snapshotting
 text, which requirement 10 forbids.
 
-**Q11 — Nav placement requires touching a vendored file. RESOLVED 2026-08-23:
-`SKILLS LAB`, `/repos/:repoId/context`.** The left-nav registry is
+**Q11 — Nav placement requires touching a vendored file. RESOLVED 2026-08-23,
+CORRECTED 2026-08-23 (same day, after implementation): `WORKSPACE`,
+`/repos/:repoId/context`.** The left-nav registry is
 `client/src/vendor/ui/nav.ts` (`NAV`, `SETTINGS_ITEM`, `SHORTCUTS`), and
 `client/AGENTS.md` marks `src/vendor/ui` do-not-touch. Adding a "Project Context"
 item and its `g`-then-key shortcut means editing that file, wrapping/extending
 `NAV` in app code, or placing the page's entry point somewhere else entirely —
 that mechanical question is unaffected by this decision and stays a call for
-whoever implements it. **Decision:** the nav item sits under `SKILLS LAB`
-(alongside Skills / Agents / Conventions), consistent with the page being a
-curation instrument for agent/skill inputs rather than repo content browsing;
-its href is `/repos/:repoId/context`, matching the existing hook and Q2's
-repo-scoped attachment model.
+whoever implements it.
+~~**Original decision (WRONG, superseded below):** the nav item sits under
+`SKILLS LAB` (alongside Skills / Agents / Conventions), consistent with the
+page being a curation instrument for agent/skill inputs rather than repo
+content browsing.~~ This missed the product owner's own design source: the
+reference sidebar mock places **Project Context under `WORKSPACE`**, as a
+sibling of **Pull Requests** — both items use the exact same `:repoId`-templated
+href pattern (`/repos/:repoId/pulls`, `/repos/:repoId/context`), i.e. both are
+"whatever you're looking at for the currently-selected project," not a
+skill/agent-curation tool. `SKILLS LAB` correctly holds `Skills`/`Agents`
+(workspace-global entity lists, no `:repoId` in their href at all) plus
+`Conventions` (a repo-scoped *input* to a skill/agent, browsed to decide what
+to attach) — but the standalone Project Context **page** (browse/preview,
+Step 6) is not itself a curation instrument; the curation happens inside the
+Agent/Skill editor's Context tab/section, not on this page. Placing the page
+under `SKILLS LAB` reinforced a false read that it was somehow specific to
+this deployment's one seeded repo, when the design intent (and the existing
+`WORKSPACE`/`:repoId` pattern `Pull Requests` already establishes) is that it
+follows whichever project/repo is currently selected. **Decision (final):**
+the nav item moves to the `WORKSPACE` section, sibling to `Pull Requests`; its
+href stays `/repos/:repoId/context`, matching the existing hook and Q2's
+repo-scoped attachment model — Q2's `(repo_id, path)` data model is unaffected
+by this correction, only the nav *section* changes.
+
+**On the "wrapping/extending `NAV` in app code" alternative, investigated
+2026-08-23 during the correction:** the vendored `Sidebar.tsx`
+(`client/src/vendor/ui/shell/Sidebar.tsx`) imports `NAV` directly from
+`../nav` with **no override prop**, and is itself wrapped by vendored
+`AppFrame.tsx` — there is no existing extension point anywhere in the vendored
+shell. A genuine composition seam would mean adding an optional `nav` prop to
+**three** vendored files (`types.ts`, `AppFrame.tsx`, `Sidebar.tsx`), which is
+*more* vendor surface touched than the single-file `nav.ts` edit this and the
+two prior features (Skills Lab, Conventions Lab) already made — disproportionate
+for a nav-section move. **Decision:** continue editing `client/src/vendor/ui/nav.ts`
+directly, matching established precedent; building a real seam is deferred
+until a feature actually needs one badly enough to justify the three-file cost.
 
 **Q12 — Prompt-block order in screenshot 4. RESOLVED 2026-08-23: keep shipped
 order.** The screenshot lists the blocks as System → Skills → **Project

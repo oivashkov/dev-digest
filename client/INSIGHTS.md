@@ -81,12 +81,19 @@ _None yet._
   Conventions Lab (`84283ed`), and Project Context (`specs/01-project-context-plan.md`
   Step 6, this session) — the plan's own instruction to "extend/compose `NAV`
   in app code rather than editing the vendored registry" could not be
-  followed as written because that seam doesn't exist yet. Before asking a
-  future session to add a nav item without touching `nav.ts`, either build
-  the composition layer first (an app-owned `NAV` wrapper/merge exported from
-  `src/components/app-shell`) or explicitly accept the direct-edit pattern as
-  the documented exception — don't repeat the instruction against a seam that
-  isn't there.
+  followed as written because that seam doesn't exist yet.
+  **Investigated and settled 2026-08-23, same day (post-implementation nav-section
+  fix):** a real seam is bigger than it looks — `Sidebar.tsx`
+  (`src/vendor/ui/shell/Sidebar.tsx`) imports `NAV` directly from `../nav` with
+  no override prop, and is itself wrapped by vendored `AppFrame.tsx` with no
+  `nav` field on `ShellContext` (`src/vendor/ui/shell/types.ts`) either.
+  Building a composition seam means adding an optional `nav` prop across
+  **three** vendored files (`types.ts`, `AppFrame.tsx`, `Sidebar.tsx`) — *more*
+  vendor surface touched than the single-file `nav.ts` edit, not less.
+  **Decision: keep editing `nav.ts` directly** as the accepted convention;
+  don't attempt the seam again until a feature's need for it clearly outweighs
+  a three-file vendor change. `client/AGENTS.md`'s do-not-touch list has no
+  exception clause for this — treat this entry as the documented one.
 
 - **2026-08-23** — `src/components/app-shell/helpers.ts:29`'s `activeKeyFor`
   matches the active nav key by `pathname.includes("/onboarding")`, a

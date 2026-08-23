@@ -371,9 +371,20 @@ five already-present layers**, not inventing them.
   `mode.edit` / `editor.save` / `editor.saving` keys describe the write path Q9
   puts out of scope — leave them unused or remove them, but ship **no** `+`,
   upload, or Edit/Save affordance.
-  Nav: the item goes under `SKILLS LAB` with href `/repos/:repoId/context` (Q11).
-  `client/src/vendor/ui/nav.ts` is do-not-touch, so extend/compose `NAV` in app
-  code rather than editing the vendored registry.
+  ~~Nav: the item goes under `SKILLS LAB` with href `/repos/:repoId/context` (Q11).~~
+  ~~`client/src/vendor/ui/nav.ts` is do-not-touch, so extend/compose `NAV` in app
+  code rather than editing the vendored registry.~~
+  **Post-implementation correction (2026-08-23, same day):** `SKILLS LAB` was
+  wrong — see the corrected `specs/01-project-context.md` Q11. The nav item
+  belongs under `WORKSPACE`, sibling to `Pull Requests`, matching the product
+  owner's own design source and the existing `:repoId`-templated href pattern
+  Pull Requests already establishes. The "extend/compose `NAV` in app code"
+  instruction above also turned out to be unbuildable as stated: the vendored
+  `Sidebar.tsx`/`AppFrame.tsx` have no `nav` override prop, and adding one would
+  touch three vendored files instead of one — more vendor surface, not less.
+  Decision on both: move the item to `WORKSPACE` in `client/src/vendor/ui/nav.ts`
+  directly (same file this and the two prior nav-adding features already
+  edited), href unchanged at `/repos/:repoId/context`.
   Markdown rendering must not enable raw-HTML passthrough, and links must be
   restricted to `http:`/`https:`.
 - **Skills the implementer will apply:** `frontend-architecture`,
