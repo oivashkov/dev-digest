@@ -46,6 +46,7 @@
     "tabs": {
       "config": "Config",
       "skills": "Skills",
+      "context": "Context",
       "evals": "Evals",
       "stats": "Stats",
       "ci": "CI"
@@ -97,6 +98,23 @@
     "moveUp": "Move up",
     "moveDown": "Move down",
     "saving": "Saving…"
+  },
+  "context": {
+    "title": "Project context",
+    "attachedCount": "{attached} of {total} attached",
+    "tokenTotal": "~{count} tok attached",
+    "filterPlaceholder": "Filter documents…",
+    "orderHint": "Order matters — earlier documents appear earlier in the assembled ## Project context block. Toggle to attach, drag the handle to reorder.",
+    "noDocuments": "No documents match. Add Markdown under specs/, docs/, or a repo-root INSIGHTS.md, then re-index on the Project Context page.",
+    "noRepo": "Select a repo to attach project-context documents.",
+    "dragHandle": "Drag to reorder",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "saving": "Saving…",
+    "missing": "missing",
+    "detach": "Detach",
+    "inheritedTitle": "Inherited from linked skills",
+    "inheritedHint": "Attached via an enabled linked skill — detach it from that skill to remove it here."
   },
   "mount": {
     "body": "Mount point for {owner}. The Agent Editor shell + tab routing are wired by A2 — {owner} renders this tab."

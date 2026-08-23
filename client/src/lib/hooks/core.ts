@@ -16,8 +16,7 @@ import type {
   RepoInput,
   PrMeta,
   PrDetail,
-  SpecFile,
-  IndexStatus,
+  ContextDiscovery,
 } from "../types";
 
 // ---- Settings (F1: GET/PUT /settings, POST /settings/test-connection) ----
@@ -120,19 +119,35 @@ export function usePullDetail(prId: string | number | null | undefined) {
   });
 }
 
-// ---- Project Context (A3 contract; safe to call once API exposes it) ----
+// ---- Project Context (SPEC-01: GET/POST /repos/:id/context[/reindex]) ----
+/** Discovery envelope for the Project Context page — documents + degraded +
+ *  the summed token total the status footer needs (Q5). */
 export function useContextFiles(repoId: string | null | undefined) {
   return useQuery({
     queryKey: ["context", repoId],
-    queryFn: () => api.get<SpecFile[]>(`/repos/${repoId}/context`),
+    queryFn: () => api.get<ContextDiscovery>(`/repos/${repoId}/context`),
     enabled: !!repoId,
   });
 }
 
+/** One document's current text, for the preview pane. */
+export function useContextFile(repoId: string | null | undefined, path: string | null | undefined) {
+  return useQuery({
+    queryKey: ["context-file", repoId, path],
+    queryFn: () =>
+      api.get<ContextDiscovery["documents"][number]>(
+        `/repos/${repoId}/context/file?path=${encodeURIComponent(path!)}`,
+      ),
+    enabled: !!repoId && !!path,
+  });
+}
+
+/** Re-walk the clone and refresh the discovered document list — no embedding
+ *  or LLM call (Q5). Same response shape as `useContextFiles`. */
 export function useReindexContext() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (repoId: string) => api.post<IndexStatus>(`/repos/${repoId}/context/reindex`),
-    onSuccess: (_d, repoId) => qc.invalidateQueries({ queryKey: ["context", repoId] }),
+    mutationFn: (repoId: string) => api.post<ContextDiscovery>(`/repos/${repoId}/context/reindex`),
+    onSuccess: (data, repoId) => qc.setQueryData(["context", repoId], data),
   });
 }

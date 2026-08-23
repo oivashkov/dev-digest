@@ -1,9 +1,18 @@
 import type { Container } from '../../platform/container.js';
-import type { Skill, SkillSource, SkillStats, SkillSummary, SkillType, SkillVersion } from '@devdigest/shared';
+import type {
+  AttachedContextDoc,
+  Skill,
+  SkillSource,
+  SkillStats,
+  SkillSummary,
+  SkillType,
+  SkillVersion,
+} from '@devdigest/shared';
 import { NotFoundError, ValidationError } from '../../platform/errors.js';
 import { MAX_IMPORT_BYTES } from './constants.js';
 import { SkillsRepository, type SkillRow } from './repository.js';
 import { computeSkillStats, extractSkillCore, toSkillDto, type ExtractedSkillCore } from './helpers.js';
+import { ContextService } from '../context/service.js';
 
 /**
  * Skills service. Business logic for the Skills Lab list/editor and the
@@ -32,9 +41,11 @@ export interface UpdateSkillInput {
 
 export class SkillsService {
   private repo: SkillsRepository;
+  private contextService: ContextService;
 
   constructor(container: Container) {
     this.repo = new SkillsRepository(container.db);
+    this.contextService = new ContextService(container);
   }
 
   /** List with each skill's usage summary embedded (see SkillSummary's doc
@@ -141,6 +152,42 @@ export class SkillsService {
 
   async delete(workspaceId: string, id: string): Promise<boolean> {
     return this.repo.deleteById(workspaceId, id);
+  }
+
+  /** Attached context-document set for a skill, scoped to `repoId` (Q2),
+   *  sorted by normalized path (Q13). Marks a persisted-but-vanished path
+   *  `missing: true` (Q7) rather than dropping it. */
+  async getContextDocs(
+    workspaceId: string,
+    skillId: string,
+    repoId: string,
+  ): Promise<AttachedContextDoc[] | undefined> {
+    const skill = await this.repo.getById(workspaceId, skillId);
+    if (!skill) return undefined;
+    const [rows, discovery] = await Promise.all([
+      this.repo.contextDocs(skillId, repoId),
+      this.contextService.discover(workspaceId, repoId),
+    ]);
+    const discovered = new Set((discovery?.documents ?? []).map((d) => d.path));
+    return rows.map((r) => ({
+      repo_id: repoId,
+      path: r.path,
+      order: r.order,
+      missing: !discovered.has(r.path),
+    }));
+  }
+
+  /** Full-replace the skill's attached context-document set for `repoId`. */
+  async setContextDocs(
+    workspaceId: string,
+    skillId: string,
+    repoId: string,
+    paths: string[],
+  ): Promise<AttachedContextDoc[] | undefined> {
+    const skill = await this.repo.getById(workspaceId, skillId);
+    if (!skill) return undefined;
+    await this.repo.setContextDocs(skillId, repoId, paths);
+    return this.getContextDocs(workspaceId, skillId, repoId);
   }
 
   /**

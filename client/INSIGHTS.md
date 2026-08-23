@@ -72,6 +72,22 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-23** — `src/vendor/ui/nav.ts`'s exported `NAV` constant has **no
+  composition/extension point in app code** — every consumer
+  (`src/components/app-shell/useGlobalShortcuts.ts`,
+  `useShellCommands.ts`) imports `NAV` straight from `@devdigest/ui`. Despite
+  `AGENTS.md`'s "Do not touch: `src/vendor/ui`" rule, every nav-item addition
+  to date has edited `nav.ts` directly instead: Skills Lab (`9e814a1`),
+  Conventions Lab (`84283ed`), and Project Context (`specs/01-project-context-plan.md`
+  Step 6, this session) — the plan's own instruction to "extend/compose `NAV`
+  in app code rather than editing the vendored registry" could not be
+  followed as written because that seam doesn't exist yet. Before asking a
+  future session to add a nav item without touching `nav.ts`, either build
+  the composition layer first (an app-owned `NAV` wrapper/merge exported from
+  `src/components/app-shell`) or explicitly accept the direct-edit pattern as
+  the documented exception — don't repeat the instruction against a seam that
+  isn't there.
+
 - **2026-08-20** — `useSmartDiff`'s `SmartDiffFile.finding_lines` is bare
   `number[]` (deduped line numbers, no severity/id/rationale) — it cannot
   drive a per-finding severity badge or an "open this finding" click target

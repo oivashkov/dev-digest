@@ -37,7 +37,9 @@
       "memoryPulled": "Memory pulled",
       "specsRead": "Specs read",
       "items": "{count, plural, one {# item} other {# items}}",
-      "none": "none"
+      "none": "none",
+      "specTokens": "{count} tok",
+      "truncated": "truncated"
     },
     "stat": {
       "duration": "DURATION",

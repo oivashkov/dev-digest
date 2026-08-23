@@ -305,6 +305,13 @@ export const AgentVersionConfig = z.object({
   ci_fail_on: CiFailOn,
   repo_intel: z.boolean(),
   skills: z.array(z.string()),
+  // Attached project-context document PATHS (not content) at snapshot time —
+  // same reproducibility rationale as `skills` above (Q10). `.default([])`
+  // means every HAND-BUILT `AgentVersionConfig` literal must be updated by
+  // hand too; grep them, don't trust a clean typecheck (root INSIGHTS.md,
+  // 2026-08-18 — `agent_versions.config_json` is untyped jsonb, so this is
+  // invisible to `tsc` in both directions).
+  context_docs: z.array(z.string()).default([]),
 });
 export type AgentVersionConfig = z.infer<typeof AgentVersionConfig>;
 

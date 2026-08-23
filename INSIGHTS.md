@@ -253,6 +253,22 @@ _None yet._
   step in a multi-step plan adds fields a *later, dependent* step's file is
   supposed to fill in (Step 2 here); grep every hand-built literal of a
   contract before assuming "additive" means zero breakage.
+  **Sharper, silent-in-both-directions case found 2026-08-23 building Project
+  Context (`specs/01-project-context-plan.md` Step 1):** the "caught by
+  typecheck" guarantee above depends on the target column being
+  `.$type<Contract>()`-annotated in Drizzle. `agent_versions.config_json` is a
+  bare `jsonb('config_json').notNull()` with **no** `.$type<AgentVersionConfig>()`
+  (`server/src/db/schema/agents.ts:45`), so adding `context_docs` to
+  `AgentVersionConfig` did **not** fail `pnpm typecheck` when the hand-built
+  literal in `AgentsRepository.snapshotVersion`
+  (`server/src/modules/agents/repository.ts`) omitted it — the compiler had no
+  type to check the literal against. Worse, `.default([])` on the new field then
+  makes `AgentVersionConfig.parse(row.configJson)` in `toAgentVersionDto`
+  (`server/src/modules/agents/helpers.ts`) succeed forever on old snapshots that
+  never contain it, silently returning the default instead of erroring. A green
+  `pnpm typecheck` is not evidence a jsonb-backed hand-built literal was updated —
+  grep the literal itself, and check whether the backing column is
+  `.$type<>()`-annotated before trusting the compiler to catch a missed field.
 - **2026-08-12** — A feature can be scaffolded consistently across the DB
   schema, the Zod contract, AND a pure-engine prompt slot with **zero lines
   connecting them at runtime** — no module, no route, no UI, no caller ever

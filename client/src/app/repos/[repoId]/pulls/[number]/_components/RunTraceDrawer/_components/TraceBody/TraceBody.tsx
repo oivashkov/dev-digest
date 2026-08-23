@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { Badge } from "@devdigest/ui";
 import type { RunTrace, FindingRecord } from "@devdigest/shared";
 import { PROMPT_COLORS } from "../../constants";
-import { approxTokens, formatSeconds, formatTokens } from "../../helpers";
+import { approxTokens, formatSeconds, formatTokens, specsReadTokenTotal } from "../../helpers";
 import { formatCostUsd } from "@/lib/format";
 import { s } from "../../styles";
 import { TraceSection } from "../TraceSection";
@@ -43,7 +43,9 @@ export function TraceBody({ trace, findings }: { trace: RunTrace; findings: Find
               ) : (
                 trace.specs_read.map((sp, i) => (
                   <span key={i} className="mono" style={s.spec}>
-                    {sp}
+                    {sp.path}
+                    <span style={s.specTokens}>{t("trace.config.specTokens", { count: sp.tokens })}</span>
+                    {sp.truncated && <span style={s.specTruncated}>{t("trace.config.truncated")}</span>}
                   </span>
                 ))
               )}
@@ -88,7 +90,12 @@ export function TraceBody({ trace, findings }: { trace: RunTrace; findings: Find
           <PromptBlock label={t("trace.prompt.repoMap")} text={trace.prompt_assembly.repo_map} color={PROMPT_COLORS.repoMap} />
         )}
         {trace.prompt_assembly.specs != null && (
-          <PromptBlock label={t("trace.prompt.specs")} text={trace.prompt_assembly.specs} color={PROMPT_COLORS.specs} />
+          <PromptBlock
+            label={t("trace.prompt.specs")}
+            text={trace.prompt_assembly.specs}
+            color={PROMPT_COLORS.specs}
+            tokens={specsReadTokenTotal(trace.specs_read)}
+          />
         )}
         {trace.prompt_assembly.callers != null && (
           <PromptBlock label={t("trace.prompt.callers")} text={trace.prompt_assembly.callers} color={PROMPT_COLORS.callers} />

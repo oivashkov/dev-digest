@@ -3,7 +3,14 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import type { Agent, AgentSkillLink, ModelInfo, Provider, ReviewStrategy } from "@devdigest/shared";
+import type {
+  Agent,
+  AgentSkillLink,
+  AttachedContextDoc,
+  ModelInfo,
+  Provider,
+  ReviewStrategy,
+} from "@devdigest/shared";
 
 export function useAgents() {
   return useQuery({
@@ -109,6 +116,30 @@ export function useSetAgentSkills() {
     onSuccess: (_data, { agentId }) => {
       qc.invalidateQueries({ queryKey: ["agent-skills", agentId] });
       qc.invalidateQueries({ queryKey: ["agents"] });
+    },
+  });
+}
+
+/** An agent's attached Project Context documents, scoped to `repoId` (Q2) —
+ *  backs the Agent editor's Context tab. */
+export function useAgentContextDocs(agentId: string | null | undefined, repoId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["agent-context-docs", agentId, repoId],
+    queryFn: () => api.get<AttachedContextDoc[]>(`/agents/${agentId}/context?repo_id=${repoId}`),
+    enabled: !!agentId && !!repoId,
+  });
+}
+
+/** Full-replace the agent's attached context-document set for a repo, in the
+ *  given order (drag order, Q3) — one call handles attach/detach/reorder,
+ *  same shape as `useSetAgentSkills`. */
+export function useSetAgentContextDocs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, repoId, paths }: { agentId: string; repoId: string; paths: string[] }) =>
+      api.put<AttachedContextDoc[]>(`/agents/${agentId}/context`, { repo_id: repoId, paths }),
+    onSuccess: (_data, { agentId, repoId }) => {
+      qc.invalidateQueries({ queryKey: ["agent-context-docs", agentId, repoId] });
     },
   });
 }

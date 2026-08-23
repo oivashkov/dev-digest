@@ -275,6 +275,19 @@ _None yet._
   `isWithinClone` (all exported from `intent.ts`) for any new feature that
   needs to read a repo file at a path sourced from untrusted text, rather than
   re-deriving a guard or assuming `readFile` is safe by default.
+  **Refined 2026-08-23 building Project Context
+  (`specs/01-project-context-plan.md`):** "reuse `isAllowedPlanRefShape`" was
+  too broad — that allowlist is scoped to a *different* feature's shapes
+  (`specs/*.md` / `docs/**/*.md` / `docs/plans/**`) and widening it to cover
+  Project Context's `**/specs/**/*.md` / `**/docs/**/*.md` / bare
+  `**/INSIGHTS.md` shapes would have let a PR-intent plan-ref resolve an
+  `INSIGHTS.md` path it was never meant to. `server/src/modules/context/helpers.ts`
+  instead defines its own project-context-local shape allowlist and composes it
+  with the **unchanged, reused** `isWithinClone` — the containment check is the
+  generic, safely-reusable half; the shape allowlist is feature-specific and
+  should get its own copy rather than widening the existing one. Reuse
+  `isWithinClone` by default; only reuse `isAllowedPlanRefShape` itself if the
+  new feature's accepted path shapes are genuinely identical to intent's.
 
 - **2026-08-18** — `Container.reviewRepo` (the shared getter, documented in
   `container.ts` as "so consuming modules use `container.reviewRepo` instead

@@ -268,13 +268,92 @@ export const PrCommentInput = z.object({
 export type PrCommentInput = z.infer<typeof PrCommentInput>;
 
 // ---- Project Context ----
+/** A discovered document's type, derived from which search-root pattern
+ *  matched it (Q4: `**\/specs/**\/*.md` → 'specs', `**\/docs/**\/*.md` →
+ *  'docs', `**\/INSIGHTS.md` (file match) → 'insights'). */
+export const SpecDocType = z.enum(['specs', 'docs', 'insights']);
+export type SpecDocType = z.infer<typeof SpecDocType>;
+
+const CONTEXT_SPECS_RE = /(^|\/)specs\/.+\.md$/;
+const CONTEXT_DOCS_RE = /(^|\/)docs\/.+\.md$/;
+const CONTEXT_INSIGHTS_RE = /(^|\/)INSIGHTS\.md$/;
+
+/**
+ * Shape allowlist for a project-context document path — `**\/specs/**\/*.md`,
+ * `**\/docs/**\/*.md`, or a bare `**\/INSIGHTS.md` file (Q4) — and rejects any
+ * `..` segment or absolute/drive-absolute path outright, regardless of shape.
+ * This is a **project-context-local** allowlist, deliberately separate from
+ * `server/src/modules/reviews/intent.ts`'s `isAllowedPlanRefShape` (which
+ * covers `specs/*.md` / `docs/**\/*.md` / `docs/plans/**` for a different
+ * feature) — do not widen that one to cover this. Pure string matching (no
+ * filesystem access) so it is safe to use both in this Zod contract (client +
+ * server) and, composed with a clone-containment check, as the server's
+ * pre-`readFile` guard.
+ */
+export function isContextDocPathShape(path: string): boolean {
+  if (path.includes('..')) return false;
+  if (path.startsWith('/') || path.startsWith('\\')) return false;
+  if (/^[A-Za-z]:[\\/]/.test(path)) return false; // defensive: windows drive-absolute
+  return CONTEXT_SPECS_RE.test(path) || CONTEXT_DOCS_RE.test(path) || CONTEXT_INSIGHTS_RE.test(path);
+}
+
+/** A repo-relative path to an attachable project-context document, validated
+ *  against the shape allowlist at the boundary (before any handler runs). */
+export const SpecPath = z
+  .string()
+  .min(1)
+  .refine(isContextDocPathShape, { message: 'Path is not an allowed project-context document' });
+export type SpecPath = z.infer<typeof SpecPath>;
+
+/** Max attached documents per agent/skill (Q8) — also enforced again at
+ *  assembly time in `server/src/modules/reviews/project-context.ts`. */
+export const MAX_CONTEXT_DOCS = 10;
+
+/** Body for `PUT /agents/:id/context` and `PUT /skills/:id/context` —
+ *  full-replace the attached document set for a repo, in order. */
+export const SetContextDocsBody = z.object({
+  repo_id: z.string().uuid(),
+  paths: z.array(SpecPath).max(MAX_CONTEXT_DOCS),
+});
+export type SetContextDocsBody = z.infer<typeof SetContextDocsBody>;
+
 export const SpecFile = z.object({
   path: z.string(),
+  /** Search-root pattern this document matched (Q4). */
+  type: SpecDocType,
+  /** Server-computed estimated token count (Tokenizer adapter). */
+  tokens: z.number().int(),
   content: z.string().nullish(),
   size: z.number().int().nullish(),
   updated_at: z.string().nullish(),
 });
 export type SpecFile = z.infer<typeof SpecFile>;
+
+/** Response envelope for `GET /repos/:id/context` and
+ *  `POST /repos/:id/context/reindex` (Q5: reindex means "re-walk + refresh
+ *  the list", never re-embed — both return the same shape). */
+export const ContextDiscovery = z.object({
+  documents: z.array(SpecFile),
+  /** true when the repo has no local clone yet — an empty list, not an error. */
+  degraded: z.boolean(),
+  /** Summed estimated token count across every DISCOVERED document (not just
+   *  attached ones) — the Project Context page's status-footer number (Q5). */
+  tokens_total: z.number().int(),
+  last_scan_at: z.string().nullable(),
+});
+export type ContextDiscovery = z.infer<typeof ContextDiscovery>;
+
+/** One attached document as surfaced by `GET /agents/:id/context` /
+ *  `GET /skills/:id/context` — the stored path plus whether discovery still
+ *  finds it (Q7: a persisted-but-vanished path is marked `missing`, never
+ *  silently dropped). */
+export const AttachedContextDoc = z.object({
+  repo_id: z.string(),
+  path: z.string(),
+  order: z.number().int(),
+  missing: z.boolean(),
+});
+export type AttachedContextDoc = z.infer<typeof AttachedContextDoc>;
 
 export const IndexStatus = z.object({
   status: z.enum(['idle', 'cloning', 'parsing', 'embedding', 'done', 'error']),

@@ -5,6 +5,13 @@ import type { CiFailOn, Provider, ReviewStrategy } from '@devdigest/shared';
 import { DEFAULT_AGENT_DESCRIPTION, INITIAL_AGENT_VERSION } from './constants.js';
 import { isConfigChange } from './helpers.js';
 
+/** One attached context-document row for an agent, scoped to one repo. */
+export interface AgentContextDocRow {
+  repoId: string;
+  path: string;
+  order: number;
+}
+
 /**
  * A2 — agents data-access. Owns `agents`, `agent_versions`, and the
  * `agent_skills` link table (shared with A1's skills repository, but A2 owns the
@@ -147,6 +154,13 @@ export class AgentsRepository {
 
   private async snapshotVersion(row: AgentRow, version: number): Promise<void> {
     const skills = await this.skillIdsForAgent(row.id);
+    // context_docs is a FLAT string[] on AgentVersionConfig (Q10) with no
+    // per-repo structure — matching that shape, this snapshots the union of
+    // paths attached across every repo this agent currently has attachments
+    // for (deduplicated by path), not one repo's list. A replay of this
+    // snapshot still needs the run's own repo to resolve which of these
+    // paths are actually in scope for it, same as the live attach flow.
+    const contextDocs = await this.contextDocPathsForAgent(row.id);
     await this.db
       .insert(t.agentVersions)
       .values({
@@ -161,6 +175,7 @@ export class AgentsRepository {
           ci_fail_on: row.ciFailOn,
           repo_intel: row.repoIntel,
           skills,
+          context_docs: contextDocs,
         },
       })
       .onConflictDoNothing();
@@ -246,6 +261,57 @@ export class AgentsRepository {
         .values(uniqueIds.map((skillId, i) => ({ agentId, skillId, order: i })))
         .onConflictDoUpdate({
           target: [t.agentSkills.agentId, t.agentSkills.skillId],
+          set: { order: sql`excluded."order"` },
+        });
+    });
+  }
+
+  // ---- agent_context_docs (Project Context attachments, SPEC-01) ----------
+
+  /** Attached context-document paths for an agent, scoped to one repo, in
+   *  drag order (Q3). */
+  async contextDocs(agentId: string, repoId: string): Promise<AgentContextDocRow[]> {
+    const rows = await this.db
+      .select({ path: t.agentContextDocs.path, order: t.agentContextDocs.order })
+      .from(t.agentContextDocs)
+      .where(and(eq(t.agentContextDocs.agentId, agentId), eq(t.agentContextDocs.repoId, repoId)))
+      .orderBy(asc(t.agentContextDocs.order));
+    return rows.map((r) => ({ repoId, path: r.path, order: r.order }));
+  }
+
+  /** Every distinct path attached to this agent, across all repos — used
+   *  only for the flat `AgentVersionConfig.context_docs` snapshot (Q10). */
+  async contextDocPathsForAgent(agentId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ path: t.agentContextDocs.path })
+      .from(t.agentContextDocs)
+      .where(eq(t.agentContextDocs.agentId, agentId))
+      .orderBy(asc(t.agentContextDocs.path));
+    return rows.map((r) => r.path);
+  }
+
+  /**
+   * Replace the full set of attached context-document paths for this agent,
+   * scoped to `repoId`, assigning order = index (drag order, Q3). Same
+   * delete-then-insert-with-upsert shape as `setSkills` — a bare transaction
+   * is NOT enough for two concurrent calls against a fresh (agentId, repoId)
+   * pair (`server/INSIGHTS.md`, 2026-08-12): the DELETE takes no lock when
+   * there is nothing to delete, so both transactions can race straight into
+   * the INSERT; `.onConflictDoUpdate` on the composite PK turns the losing
+   * side into an UPDATE instead of a raw 500.
+   */
+  async setContextDocs(agentId: string, repoId: string, paths: string[]): Promise<void> {
+    const uniquePaths = [...new Set(paths)];
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(t.agentContextDocs)
+        .where(and(eq(t.agentContextDocs.agentId, agentId), eq(t.agentContextDocs.repoId, repoId)));
+      if (uniquePaths.length === 0) return;
+      await tx
+        .insert(t.agentContextDocs)
+        .values(uniquePaths.map((path, i) => ({ agentId, repoId, path, order: i })))
+        .onConflictDoUpdate({
+          target: [t.agentContextDocs.agentId, t.agentContextDocs.repoId, t.agentContextDocs.path],
           set: { order: sql`excluded."order"` },
         });
     });

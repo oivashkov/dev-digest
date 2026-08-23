@@ -48,15 +48,33 @@ export interface WalkResult {
   stats: WalkStats;
 }
 
+export interface WalkOptions {
+  /**
+   * Override the default extension-based file filter. Receives the file's
+   * POSIX-style relpath (not just its basename), so a directory-aware
+   * pattern (e.g. "under `specs/`, ending `.md`") can be expressed —  an
+   * extension set alone cannot (used by the Project Context module's
+   * discovery walk, SPEC-01). Omitted (default): the original T1/T2 indexer
+   * behavior — `SUPPORTED_EXT` matched against the file's extension only.
+   */
+  match?: (relPath: string) => boolean;
+  /** Override `MAX_FILE_SIZE`. Omitted (default): unchanged. */
+  maxFileSize?: number;
+}
+
 /**
  * Recursively walk `root`, returning the file set to parse + a small stats
  * object the pipeline persists into `repo_index_state.stats`.
+ *
+ * `options` is entirely optional and defaults to today's exact behavior —
+ * every existing caller (`pipeline/full.ts`, `pipeline/incremental.ts`) calls
+ * `walkClone(root)` with no second argument and must see zero change.
  */
-export async function walkClone(root: string): Promise<WalkResult> {
+export async function walkClone(root: string, options: WalkOptions = {}): Promise<WalkResult> {
   const out: string[] = [];
   const stats: WalkStats = { totalCandidates: 0, skippedTooLarge: 0, bounded: 0 };
 
-  await walkDir(root, root, out, stats);
+  await walkDir(root, root, out, stats, options);
 
   // Stable order: alphabetical relpath. Keeps "first N when bounded" reproducible
   // across runs (until T3 replaces it with rank-driven selection).
@@ -75,6 +93,7 @@ async function walkDir(
   dir: string,
   out: string[],
   stats: WalkStats,
+  options: WalkOptions,
 ): Promise<void> {
   let entries: Dirent[];
   try {
@@ -91,32 +110,36 @@ async function walkDir(
 
     if (entry.isDirectory()) {
       if (EXCLUDED_SET.has(name)) continue;
-      await walkDir(root, join(dir, name), out, stats);
+      await walkDir(root, join(dir, name), out, stats, options);
       continue;
     }
 
     if (!entry.isFile()) continue;
 
-    const ext = extname(name).toLowerCase();
-    if (!SUPPORTED_SET.has(ext)) continue;
+    const full = join(dir, name);
+    // Posix-style relative path so DB rows are platform-agnostic (matches the
+    // `pr_files.path` convention) — computed before the match check so a
+    // directory-aware `options.match` predicate can see the full relpath.
+    const rel = relative(root, full).split(sep).join('/');
+
+    const matches = options.match
+      ? options.match(rel)
+      : SUPPORTED_SET.has(extname(name).toLowerCase());
+    if (!matches) continue;
 
     stats.totalCandidates += 1;
 
-    const full = join(dir, name);
     let size: number;
     try {
       size = (await stat(full)).size;
     } catch {
       continue;
     }
-    if (size > MAX_FILE_SIZE) {
+    if (size > (options.maxFileSize ?? MAX_FILE_SIZE)) {
       stats.skippedTooLarge += 1;
       continue;
     }
 
-    // Posix-style relative path so DB rows are platform-agnostic (matches the
-    // `pr_files.path` convention).
-    const rel = relative(root, full).split(sep).join('/');
     out.push(rel);
   }
 }

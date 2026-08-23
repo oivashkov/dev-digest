@@ -1,24 +1,26 @@
 {
   "title": "Project Context",
-  "chunks": "{count} chunks",
+  "subtitle": "Markdown documents discovered in this repo — attach them to an agent or skill as grounding context.",
   "reindex": "Re-index",
-  "indexing": "Indexing…",
-  "resync": "Resync",
-  "resyncing": "Resyncing…",
-  "indexStatus": "Index status: {status}",
-  "loadError": "Couldn’t load specs",
-  "kb": "{kb}kb",
+  "reindexing": "Re-indexing…",
+  "loadError": "Couldn’t load documents",
+  "footer": "{count} documents · ~{tokens} tokens total · last scanned {time}",
   "empty": {
-    "title": "No spec files yet",
-    "body": "Drop your PRDs, tech specs, and acceptance criteria under .devdigest/specs/. Every agent and the PR brief read them as grounding context."
+    "title": "No documents found",
+    "body": "Add Markdown under specs/, docs/, or a repo-root INSIGHTS.md, then re-index. Every agent and skill can attach these as grounding context.",
+    "cta": "Re-index"
   },
-  "mode": {
-    "preview": "preview",
-    "edit": "edit"
+  "type": {
+    "specs": "specs",
+    "docs": "docs",
+    "insights": "insights"
   },
-  "editor": {
-    "loadError": "Couldn’t load spec",
-    "save": "Save",
-    "saving": "Saving…"
+  "list": {
+    "filterPlaceholder": "Filter by path…",
+    "empty": "No documents match your filter."
+  },
+  "preview": {
+    "selectHint": "Select a document to preview its Markdown.",
+    "loadError": "Couldn’t load this document."
   }
 }
