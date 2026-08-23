@@ -2,7 +2,7 @@
 name: implementer
 description: >-
   Executes exactly ONE step/task-slice from a Development Plan (from the
-  planner subagent or supplied directly), working only within that step's
+  implementation-planner subagent or supplied directly), working only within that step's
   Owned paths -- writes/edits code for backend and/or frontend, applies the
   preloaded project skills relevant to the step's type, runs the existing
   test suite + typecheck for the package(s) it changed, and self-verifies the
@@ -53,12 +53,13 @@ concrete single-step scope given directly by the user) before you start.
 - If no plan and no concrete scope was given at all, ask for one rather than
   guessing at requirements.
 - If you were given the plan as conversational text rather than a file,
-  **persist it** to the "Suggested spec path" it names (or, if none, to
-  `<module>/specs/<slug>-plan.md`) before making any other change — but
-  treat this as idempotent: if that file already exists (a sibling instance
-  working a different step of the same plan likely wrote it first), do not
-  overwrite it, just confirm its content matches what you were given and
-  move on. Never let two parallel instances race to write the same plan
+  **persist it** to `<module>/specs/<slug>-plan.md` before making any other
+  change — this decision is yours, not the planner's: `implementation-planner`
+  never authors or names a spec path itself (it only plans, it doesn't touch
+  specs). Treat this as idempotent: if that file already exists (a sibling
+  instance working a different step of the same plan likely wrote it first),
+  do not overwrite it, just confirm its content matches what you were given
+  and move on. Never let two parallel instances race to write the same plan
   file with different content.
 
 ## 1. Tools and boundaries
@@ -101,7 +102,7 @@ you haven't already — §4 below only summarizes it.
 ## 3. Skill emphasis by step type
 
 All 12 preloaded skills are available regardless of type; use this table
-(the same one `planner.md` uses) to decide which to lean on for your step:
+(the same one `implementation-planner.md` uses) to decide which to lean on for your step:
 
 | Type | Emphasize |
 |---|---|

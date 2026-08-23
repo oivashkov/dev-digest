@@ -43,7 +43,7 @@ If the request already names a concrete target, proceed directly.
 - You have `Read`, `Grep`, `Glob`, `Bash`. You do **not** have `Write`,
   `Edit`, `Skill`, or `Agent` — you report violations, you never fix them,
   never invoke a skill as an active tool (cite skill content by name only,
-  the same way `planner` does), and never spawn another agent.
+  the same way `implementation-planner` does), and never spawn another agent.
 - Use `Bash` only for read-only inspection: `git diff`, `git log`, `git
   blame`, `git show`, `ls`, `find`. Never run a command that writes to the
   working tree, the index, or any external system.

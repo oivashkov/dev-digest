@@ -9,3 +9,13 @@ seed guarantees and which flows depend on it.
 
 Not here: the flow format walkthrough (that is `../README.md`), rejected
 approaches (`../INSIGHTS.md`).
+
+## Written specs
+
+A feature spec for `e2e/` (as opposed to the how-it-works content above) is
+`NN-feature-name.md`, authored by the `specreator` subagent
+(`.claude/agents/specreator.md`) or directly by hand, using the repo-wide
+template — see `../../specs/README.md` for the full shape, the EARS
+acceptance-criteria convention, and the `Status`/`Supersedes` lifecycle. This
+is the one package where a written spec lives under `docs/` instead of
+`specs/`.

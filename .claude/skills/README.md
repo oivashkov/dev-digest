@@ -20,6 +20,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [typescript-expert](typescript-expert/SKILL.md) | Full-stack | Type-level programming, performance, tooling, migrations |
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
+| [ears-requirements](ears-requirements/SKILL.md) | Shared | Testable requirements in EARS form, with this project's bilingual `WHEN (КОЛИ)`/`shall (shall)` trigger convention |
 
 ## What Are Skills?
 

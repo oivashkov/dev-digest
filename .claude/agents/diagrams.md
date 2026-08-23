@@ -2,35 +2,41 @@
 
 Візуальний супровід до [README.md](README.md) — сам текст правил тут не
 дублюється, лише три діаграми, на які README посилається: основний конвеєр
-(`researcher → planner → implementer`), пост-імплементаційні ворота й автори
-документації (чотири нові агенти), і Type→Skills.
+(`specreator → researcher → implementation-planner → implementer`),
+пост-імплементаційні ворота й автори документації (чотири нові агенти), і
+Type→Skills.
 
 ## Потік передачі роботи
 
-Сім агентів утворюють один конвеєр, але однією діаграмою його показувати
+Вісім агентів утворюють один конвеєр, але однією діаграмою його показувати
 незручно — вийшло б занадто багато вузлів для "аркуша A4". Тому конвеєр
-розбито на дві діаграми: основний цикл дослідження/планування/реалізації, і
-те, що відбувається з результатом `implementer`-а після того, як крок
-завершено.
+розбито на дві діаграми: основний цикл специфікації/дослідження/планування/
+реалізації, і те, що відбувається з результатом `implementer`-а після того,
+як крок завершено.
 
 ### Основний конвеєр
 
 ```mermaid
 flowchart LR
+  S["specreator<br/>(write: лише specs/, opus)"]
   R["researcher<br/>(read-only + web)"]
-  P["planner<br/>(read-only, opus)"]
+  P["implementation-planner<br/>(read-only, opus)"]
   I1["implementer #1<br/>Owned paths A"]
   I2["implementer #2<br/>Owned paths B"]
 
+  S -- "specs/NN-feature.md<br/>(EARS acceptance criteria)" --> P
+  S -. "Open questions<br/>(зовнішнє джерело дизайну)" .-> R
   R -- "звіт: findings /<br/>evidence / could not find" --> P
   P -- "Development Plan:<br/>steps + Owned paths" --> I1
   P -- "Development Plan:<br/>steps + Owned paths" --> I2
   P -. "Open questions<br/>(зовнішня невідомість)" .-> R
 ```
 
-`researcher` не має преднавантажених скілів — читає `specs/`/`docs/`/
-`INSIGHTS.md` напряму і має `WebFetch`/`WebSearch`, яких немає в жодного
-іншого агента з семи.
+`specreator` та `researcher` не мають преднавантажених скілів у Type-таблиці
+сенсі (`specreator` преднавантажує лише `engineering-insights`/
+`mermaid-diagram`/`security` напряму через frontmatter `skills:`, не через
+Type); `researcher` читає `specs/`/`docs/`/`INSIGHTS.md` напряму і має
+`WebFetch`/`WebSearch`, яких немає в жодного іншого агента з восьми.
 
 ### Пост-імплементаційні ворота та автори документації
 
@@ -43,7 +49,7 @@ Mermaid-блок саме тому, що додавання цих чотирь�
 ```mermaid
 flowchart LR
   ID["implementer<br/>(крок завершено)"]
-  PL["planner<br/>Development Plan"]
+  PL["implementation-planner<br/>Development Plan"]
   TW["test-writer<br/>(write: лише тести)"]
   AR["architecture-reviewer<br/>(read-only)"]
   PV["plan-verifier<br/>(read-only)"]
@@ -66,15 +72,15 @@ flowchart LR
 `*.test.ts`/`*.test.tsx`/`*.it.test.ts`/`e2e/specs/*.flow.json`, `doc-writer`
 — лише `docs/`+`specs/`. Жоден із чотирьох не має `Agent` — вони не
 породжують інших агентів, як і всі інші три. `plan-verifier` додатково
-приймає план від `planner`, а не лише код від `implementer` — це
+приймає план від `implementation-planner`, а не лише код від `implementer` — це
 maker-checker: він звіряє з самим планом, а не з переказом того, що зробив
 `implementer`.
 
 ## Скіли за Type кроку
 
-`planner` і `implementer` преднавантажують один і той самий набір із 12
-проєктних скілів; яку частину **застосовувати** для конкретного кроку каже
-його `Type` (planner лише цитує їх у плані, implementer — реально накладає
+`implementation-planner` і `implementer` преднавантажують один і той самий
+набір із 12 проєктних скілів; яку частину **застосовувати** для конкретного
+кроку каже його `Type` (implementation-planner лише цитує їх у плані, implementer — реально накладає
 під час правок). Чотири нові агенти (`test-writer`, `architecture-reviewer`,
 `plan-verifier`, `doc-writer`) працюють на кроках плану типу
 **`agent-definition`** — новий, план-локальний Type, що описує роботу над
@@ -109,8 +115,8 @@ flowchart LR
 ```
 
 Вузли `security`, `zod` і `typescript-expert` навмисно спільні між гілками —
-це та сама конвергенція, що й у Type→Skills таблиці `planner.md`/
-`implementer.md` (§4/§3): `security` застосовується для будь-якого Type,
+це та сама конвергенція, що й у Type→Skills таблиці `implementation-planner.md`/
+`implementer.md` (§5/§3): `security` застосовується для будь-якого Type,
 `zod` — для `backend` і `core`, `typescript-expert` — для `core` і `always`.
 `agent-definition` — виняток із цієї конвергенції: він не перетинається з
 `security`/`zod`/`typescript-expert` (ці кроки не торкаються продуктового

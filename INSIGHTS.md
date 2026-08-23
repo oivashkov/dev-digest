@@ -16,6 +16,100 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-23 — Added `specreator`, a dedicated spec-authoring subagent; reverses the same day's "human/`doc-writer`-driven only" decision below
+
+**What:** New `.claude/agents/specreator.md` (`Read`, `Write`, `Edit`, `Grep`,
+`Glob`, `Bash`, `Skill`; model opus; write scope prompt-restricted to `specs/`
+root+modules plus the `e2e/docs/` exception). Takes a feature description
+plus whatever design sources exist (screenshots pasted into the
+conversation, text, a Figma/other link it cannot fetch, existing code) and
+writes a `specs/` file in a fixed EARS-based template (`Spec ID`/`Status`/
+`Supersedes` header; Problem & user, Goals/Non-goals, User stories,
+Acceptance criteria (EARS) with bilingual triggers `WHEN (КОЛИ)` +
+`shall (shall)`, Edge cases, Non-functional requirements, Inputs and
+provenance, Untrusted inputs, Open questions). Every design gap it finds
+(missing state, uncovered edge case, unclear cross-module contract, UX
+rough edge) goes back to the user as a question or an accept/decline-able
+proposal — never resolved silently. All five `specs/README.md` templates
+(root, `server`, `client`, `reviewer-core`, plus new `mcp-server/specs/README.md`)
+were rewritten to this one shared template, replacing the previous
+per-module ad hoc shapes and the `draft|agreed|in progress|shipped` status
+vocabulary with `draft|approved|implemented`. `e2e/` keeps its written specs
+in `e2e/docs/` (its `specs/` holds only executable `*.flow.json`), now noted
+in both `e2e/specs/README.md`'s sibling `e2e/docs/README.md` and
+`specreator.md` itself.
+**Why:** the user asked, session of 2026-08-23, for a dedicated
+Spec-Driven-Development authoring agent, explicitly including design-source
+analysis (screenshots/Figma/text/existing code) for gap-finding — a role no
+existing agent filled since `implementation-planner` reviews requirements
+but never authors them (see the entry directly below). Confirmed
+user-facing decisions during design: reuse the existing root `specs/`
+(not a new `docs/specs/`) since its README already stated the intended
+cross-package rule; fully replace the per-module templates rather than
+layering a technical appendix; grant `Write`+`Edit` (not `Write`-only)
+inside `specs/` so a draft can be revised in place before approval; keep the
+no-`WebFetch` convention shared by every other agent (Figma links are noted,
+not opened).
+**Rejected:** giving `specreator` `WebFetch` as an exception for Figma
+links — every other content-authoring agent in this repo already routes
+external unknowns to "ask the user" or `researcher` rather than fetching
+directly, and a bare Figma URL usually needs auth this agent won't have
+anyway. Also rejected: a `docs/specs/` location distinct from the existing
+root `specs/` — would have produced two competing cross-package spec
+locations for no reason, when the existing one's README already described
+the intended rule almost verbatim.
+**Correction to the entry below:** this reverses "keeps `specs/` authorship
+a deliberate, human- (or `doc-writer`-) driven act, never a byproduct of
+asking for a plan" — that constraint was about `implementation-planner`
+specifically not blurring into spec authorship as a plan-writing
+side-effect, which still holds (`implementation-planner` still never
+authors a spec). It was not meant to rule out a purpose-built spec-authoring
+agent entirely, and the user has now explicitly asked for one.
+
+### 2026-08-23 — `planner` renamed to `implementation-planner`; spec-authoring surface removed, requirements review + execution-mode question added
+
+**What:** `.claude/agents/planner.md` → `.claude/agents/implementation-planner.md`
+(new `name:`, updated `description:`), with every cross-reference to it
+(`README.md`, `diagrams.md`, `implementer.md`, `architecture-reviewer.md`)
+renamed to match. Three behavioral changes to the agent itself:
+1. Dropped the output format's "Suggested spec path" section entirely — the
+   agent no longer names or implies a `specs/` persistence path for its own
+   plan. `implementer.md`'s precondition step (persisting a conversational
+   plan before acting on it) now always falls back to
+   `<module>/specs/<slug>-plan.md` on its own, since there is nothing left
+   for the planner to suggest.
+2. Added a "Requirements review" step (new §1): the agent now reviews
+   whatever requirements already exist (request text + `<module>/specs/`)
+   for gaps/ambiguity and surfaces them as clarifying questions, plus an
+   explicit "Recommendations" output section for a better approach when one
+   is grounded in what it read — but the boundary is explicit and absolute:
+   it never authors, edits, or amends a specification/requirements document
+   itself, under any phrasing.
+3. Added a mandatory execution-mode question (§0): always ask the user
+   single-agent (one sequential `implementer` pass) vs. multi-agent
+   (disjoint Owned paths for parallel `implementer` instances) before
+   writing steps, rather than inferring it from phrasing. Plan construction
+   (§6) now only enforces strict Owned-path disjointness when multi-agent
+   was confirmed; single-agent mode only needs a stated "Depends on" where
+   sequencing actually matters.
+**Why:** the old `planner.md` blurred "plan the implementation" with
+"produce the artifact that becomes the spec" by suggesting a `specs/` path
+for its own output — conflating a disposable planning document with the
+curated, intentional specs `AGENTS.md`'s context-search order treats as
+source of truth. Splitting them keeps `specs/` authorship a deliberate,
+human- (or `doc-writer`-) driven act, never a byproduct of asking for a
+plan. The execution-mode question was previously answered implicitly by how
+steps happened to come out; asking up front avoids a plan that's silently
+unsafe to parallelize (or needlessly fragmented for a single sequential
+run).
+**Rejected:** keeping the old name and only editing behavior — the user
+asked for the rename specifically, and it also disambiguates the agent from
+a "spec-writing" reading of "planner" going forward. Also rejected: giving
+`implementation-planner` a light `Write` scoped to a `plans/` directory to
+persist its own output — same harness limitation already recorded above
+(no path-scoped `Write` grant), and it would reopen exactly the blurred
+boundary this change removes.
+
 ### 2026-08-17 — Four new pipeline subagents (`test-writer`, `architecture-reviewer`, `plan-verifier`, `doc-writer`) split into read-only-auditor vs. prompt-scoped-write tiers
 
 **What:** Per `docs/plans/new-subagents.md`, added
