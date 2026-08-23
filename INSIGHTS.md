@@ -243,8 +243,32 @@ input but left responses unchecked, so contract drift surfaced in the browser.
   after the agent's single handoff. Read the whole spec once per question
   before editing to find every place a decision needs to land, not just its
   own Open-questions paragraph.
+  **Partially confirmed 2026-08-23, same day, on `specs/02-onboarding-tour.md`'s
+  13 questions:** batching every round's Open-questions resolutions into one
+  Edit call (all 4 in one pass, then all 9 in another, instead of one Edit
+  per question) cut the count to ~10 Edit calls total for that spec — but the
+  *downstream* ripple (Acceptance-criteria/Contract-changes/Inputs-table
+  touchpoints) was still mostly done as separate follow-up edits, not folded
+  into the same pass. The batching helps; it does not by itself replace
+  "read the whole spec once per question to find every place it lands."
 
-
+- **2026-08-23** — `Agent` with `isolation: "worktree"` is an effective
+  mitigation when a **different, concurrent** Claude Code session is heavily
+  active in the same checkout. Two plain (non-isolated) `specreator` launches
+  for `specs/02-onboarding-tour.md` failed back-to-back while a peer session
+  was `busy` implementing SPEC-01 in the same working tree — one stalled 600s
+  with no progress, one was killed mid-run — a third attempt in an isolated
+  worktree completed cleanly. Trade-off: the worktree is a clean checkout of
+  the **last commit**, so it cannot see the peer session's own uncommitted
+  work (a feature, not a bug, when that work shouldn't be read as grounding
+  anyway) nor any just-committed-but-not-yet-fetched sibling spec — one run
+  had to carry "spec 01 wasn't readable from this worktree" as an Open
+  question until the file was copied back and compared by hand. The output
+  file(s) must be manually copied out of
+  `.claude/worktrees/agent-<id>/<path>` into the primary checkout, and the
+  worktree + its branch removed afterward (`git worktree remove --force`,
+  `git branch -D`) — this does not happen automatically when the run produced
+  changes.
 
 ## What Doesn't Work
 
@@ -362,6 +386,14 @@ _None yet._
   workflow-retro/SKILL.md` §2), whose own orchestrator-cost method relies on
   this diff — treat any number derived from it as directional within one
   uninterrupted stretch of turns, never as a session-wide total.
+  **Compounding gap, confirmed 2026-08-23 same day:** a `failed`/`killed`
+  `Agent` task-notification carries no `<usage>` block at all (only a
+  `<result>` fragment of whatever it managed to output) — two stalled/killed
+  `specreator` retries for `specs/02-onboarding-tour.md` did real,
+  tool-consuming work before dying, but `/workflow-retro`'s per-agent
+  accounting has no figure to attribute to either attempt. Retried-agent sunk
+  cost is systematically invisible to this method, not just imprecise —
+  say so explicitly rather than omitting the failed attempts from the count.
 - **2026-08-06** — `server`'s hermetic vitest suite (`pnpm exec vitest run
   --exclude '**/*.it.test.ts'`) crashes the whole run intermittently on Node
   v24.4.0 with `RangeError: Maximum call stack size exceeded` inside
