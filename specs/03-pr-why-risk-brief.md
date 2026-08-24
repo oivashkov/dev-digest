@@ -152,6 +152,50 @@ how this spec treats it.
     (`resolveFeatureModel(container, workspaceId, 'risk_brief')`), never a
     hardcoded model id.
 
+**Token budget:** *(amendment, 2026-08-24 — see Open questions item 8.
+Numbered 25-35 because existing items 1-24 are deliberately not renumbered;
+this group belongs logically here, as a pre-call constraint on the same
+single LLM call items 9-10 describe.)*
+25. WHEN (КОЛИ) the risk-brief prompt has been assembled and before the
+    structured LLM call is issued, the system shall (shall) measure the
+    prompt's size as the combined token count of its system content and its
+    user content, via the existing `Tokenizer` adapter's `count()`
+    (`server/src/adapters/tokenizer/index.ts`).
+26. The system shall (shall) treat 8,000 tokens, as measured in item 25, as
+    the maximum permitted size of the assembled risk-brief prompt.
+27. WHILE (ПОКИ) the measured token count is at or below 8,000, the system
+    shall (shall) issue the LLM call with every assembled section
+    unmodified.
+28. IF (ЯКЩО) the measured token count exceeds 8,000, THEN the system shall
+    (shall) trim supplementary sections in this fixed priority order —
+    plan/spec excerpts first, then diff-stat file rows, then blast-radius
+    symbols/callers, then the linked-ticket body.
+29. WHILE (ПОКИ) trimming is in progress, the system shall (shall)
+    re-measure the assembled prompt's token count after each trimming step.
+30. WHEN (КОЛИ) a re-measurement during trimming reports a count at or below
+    8,000, the system shall (shall) stop trimming, leaving every remaining
+    section intact.
+31. WHEN (КОЛИ) trimming plan/spec excerpts, the system shall (shall) drop
+    the lowest-priority excerpt first (from the end of `Intent.plan_refs`'s
+    list), then reduce the remaining excerpts' truncation length, before
+    dropping any of those remaining excerpts entirely.
+32. WHEN (КОЛИ) trimming diff-stat file rows below the existing
+    `MAX_RISK_BRIEF_DIFF_STAT_FILES` cap, the system shall (shall) retain
+    the files with the largest addition+deletion counts.
+33. The system shall (shall) exclude the PR title, the PR description, the
+    injection-defense note, and the output-schema instructions (including
+    the instruction that `risk_level` is not to be emitted) from trimming at
+    every budget-enforcement step.
+34. IF (ЯКЩО) every trimmable section has been exhausted and the measured
+    token count still exceeds 8,000, THEN the system shall (shall) abandon
+    the compute without issuing the LLM call and report the failure to the
+    caller with any cached brief left untouched, following item 18's
+    existing degrade path.
+35. WHEN (КОЛИ) any trimming has been applied to a risk-brief prompt, the
+    system shall (shall) log a truncation event recording the kept and
+    dropped amounts per trimmed section, mirroring `groundingSummary()`'s
+    kept/total log line (`reviewer-core/src/grounding.ts:87-90`).
+
 **Grounding:**
 11. IF (ЯКЩО) a `risks[]` or `review_focus[]` item references a file path
     not present in the PR's full changed-file set, THEN the system shall
@@ -226,6 +270,20 @@ how this spec treats it.
   — a file beyond the in-prompt cutoff can't be hallucinated about anyway
   (the model never saw it), so using the full set as the allowlist is
   strictly safe, never over-permissive.
+- **Assembled prompt exceeds the token budget** — a PR with many resolved
+  plan refs, a long ticket body and a wide diff stat can push the assembled
+  prompt past the 8,000-token budget (AC25-26). This trims rather than
+  fails: supplementary sections are dropped in a fixed priority order
+  (plan/spec excerpts → diff-stat rows → blast symbols → ticket body),
+  re-measuring after each step and stopping the moment the prompt is back
+  under budget (AC28-32), with the title/description/injection note/output
+  schema never trimmed (AC33) and the trim logged (AC35). Only the
+  pathological residue — where even a fully trimmed prompt is over budget,
+  e.g. an enormous title/description alone — falls through to AC34, which is
+  the *existing* AC18 degrade path (report failure, cache untouched), not a
+  second failure mode. This is the same "degrade gracefully rather than
+  hard-fail" shape already applied at AC8 (intent degrade), AC13 (grounding
+  drops rather than rejects) and AC18 (LLM failure).
 - **Plan/spec excerpt re-read for this prompt** — `Intent.plan_refs` only
   stores validated *paths*, not content; when the brief-compute step reads
   those files itself to build its own prompt, it must re-apply
@@ -254,6 +312,21 @@ how this spec treats it.
   size — no hunk bodies, matching this codebase's established
   "compact-notation over raw content" philosophy already used for
   `diffStat` fallbacks.
+- **Prompt token budget**: the assembled prompt (system + user content of
+  the single `completeStructured` call) is capped at **8,000 tokens**,
+  counted with the existing `Tokenizer` adapter's `count()`
+  (`server/src/adapters/tokenizer/index.ts` — js-tiktoken `cl100k_base`,
+  lazily loaded, falling back to `approxTokens()` = `ceil(len / 4)` if the
+  encoder fails to load). A "token" in this spec means exactly what that
+  method returns; no new counting logic or tokenizer library is introduced.
+  This is the same counter already used for the repo-map budget search (T3,
+  `server/src/modules/repo-intel/pipeline/repo-map.ts`) and for Project
+  Context's per-document token estimate
+  (`server/src/modules/context/service.ts:86`, surfaced as `SpecFile.tokens`
+  in `platform.ts:320-329`) — deliberate reuse for consistency, the same way
+  this spec already reuses `MAX_DIFF_STAT_FILES`'s pattern and
+  `isSafePlanRefPath`. Overflow is handled by prioritized trimming, never by
+  hard failure from budget alone — see acceptance criteria 25-35.
 - **Model resolution**: no new `FeatureModelId` — reuse `risk_brief`
   (`platform.ts:64-70`), already exposed generically in Settings → Models
   per `SettingsModels.tsx`'s existing generic `FeatureModelId` picker.
@@ -278,6 +351,7 @@ sequenceDiagram
     UI->>Route: GET (compute-if-missing) or POST .../refresh
     Route->>Svc: getOrComputeBrief(prId, {force})
     Svc->>Svc: assemble intent + blast + diff stats + ticket + plan refs
+    Svc->>Svc: count tokens; trim supplementary sections if over 8k budget
     Svc->>Core: completeStructured(RiskBriefExtraction)
     Core-->>Svc: {what, why, risks[], review_focus[]}
     Svc->>Gate: verify file/endpoint refs against allowlist
@@ -445,3 +519,32 @@ here has been silently assumed.
    implementation if real large-PR testing shows it starves the model of
    signal. Not a blocking question — no acceptance criterion depends on
    the exact number.
+8. **Prompt token budget, and what a "token" means here.** *(Raised and
+   settled after the spec was approved; recorded here in the same form as
+   items 1-7 because this section is where this document already keeps its
+   dated decisions.)* The per-section caps above
+   (`MAX_RISK_BRIEF_DIFF_STAT_FILES`, `MAX_RISK_BRIEF_BLAST_SYMBOLS`,
+   `MAX_RISK_BRIEF_PLAN_EXCERPT_CHARS`) bound each input independently but
+   not the assembled prompt as a whole, and "token" was left undefined —
+   so the same PR could sit under every individual cap and still produce an
+   oversized prompt, with no agreed unit to even state the limit in.
+
+   **Decision (2026-08-24):** a whole-prompt budget of **8,000 tokens**,
+   where a token is defined as whatever the existing `Tokenizer` adapter's
+   `count()` returns (`server/src/adapters/tokenizer/index.ts`: interface
+   `Tokenizer`, default `TiktokenTokenizer` — js-tiktoken `cl100k_base`,
+   encoder lazily loaded, falling back to `approxTokens()` =
+   `ceil(text.length / 4)` if the encoder fails to load). No new
+   token-counting logic or library is introduced; this reuses the same
+   counter as the repo-map token-budget search (T3) and Project Context's
+   document token estimate, for consistency, exactly as this spec already
+   reuses `MAX_DIFF_STAT_FILES`'s pattern and `isSafePlanRefPath`. The
+   budget is measured across the assembled prompt's system + user content
+   combined — everything passed into the single `completeStructured` call —
+   immediately before the call is issued. Enforcement is graceful
+   truncation in a fixed priority order, never a hard failure from budget
+   alone; the pathological "still over budget with nothing left to trim"
+   case reuses the existing AC18 degrade path rather than introducing a
+   second failure mode, and any trim is logged. See acceptance criteria
+   25-35, the "Prompt token budget" non-functional requirement, and the
+   "Assembled prompt exceeds the token budget" edge case.

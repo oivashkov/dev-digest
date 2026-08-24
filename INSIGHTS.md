@@ -276,6 +276,21 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-24** — Amending an **already-approved, already-implemented**
+  spec (`specs/03-pr-why-risk-brief.md`, adding the 8k-token prompt budget)
+  is append-only: new acceptance criteria get the next free numbers
+  (25-35) and are placed in the group where they belong *logically* — here
+  between the "LLM call / output" (9-10) and "Grounding" (11-13) groups —
+  so item numbering is intentionally non-monotonic in document order, with
+  a one-line parenthetical on the new group's heading saying why. Existing
+  items are never renumbered or reworded (their numbers are referenced from
+  `specs/03-pr-why-risk-brief-plan.md`, from other ACs, and from code
+  comments), `Status:`/`Supersedes:` are left alone (an amendment is not a
+  supersede), and the rationale lands as a new dated numbered item in the
+  spec's own "Open questions" section, matching how that file already
+  records product-owner decisions. Check `git diff --stat` shows
+  insertions-only before reporting such an amendment done.
+
 - **2026-08-24** — Two pieces of PR Why + Risk Brief scaffolding already
   existed, unused, before `specs/03-pr-why-risk-brief.md` was written:
   `pr_brief` table (`{ prId, json }`, zero writers/readers,
