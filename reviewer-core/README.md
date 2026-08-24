@@ -74,9 +74,34 @@ Exported from `src/index.ts`: `assemblePrompt` / `wrapUntrusted` (prompt),
 `groundFindings` / `groundingSummary` (grounding), `toJsonSchema` / `extractJson`
 / `parseWithRepair` (structured output), `classifyIntent` plus its
 `IntentClassificationInput` / `IntentClassificationOutcome` / `IntentTicketInput`
-/ `PlanExcerptInput` types (intent classification), plus the `run` entrypoint and
-`reduce`. Contracts (`Review`, `Finding`, `Verdict`, …) come from
-`@devdigest/shared`.
+/ `PlanExcerptInput` types (intent classification), `extractRiskBrief` /
+`buildRiskBriefMessages` / `groundRiskBrief` / `riskBriefGroundingSummary` plus
+their `RiskBriefExtractionInput` / `RiskBriefPromptInput` /
+`RiskBriefExtractionOutcome` / `RiskBriefTicketInput` / `RiskBriefPlanExcerptInput`
+/ `RiskBriefAllowlist` / `RiskBriefGroundingResult` types (risk-brief
+extraction — see below), plus the `run` entrypoint and `reduce`. Contracts
+(`Review`, `Finding`, `Verdict`, …) come from `@devdigest/shared`.
+
+## Risk-brief extraction (`extractRiskBrief`)
+
+Another sibling entry point to `reviewPullRequest`/`classifyIntent`: given
+already-resolved title/description/intent/blast-summary/diff-stat/ticket/plan-
+excerpt signals (each `wrapUntrusted()`-wrapped) + an injected `LLMProvider`,
+returns `{ what, why, risks[], review_focus[] }` — no `risk_level` field; the
+caller computes that deterministically from the post-grounding `risks[]`, the
+same "never trust a self-report" principle as `groundFindings()`/the
+recomputed score. `groundRiskBrief`/`riskBriefGroundingSummary` are the
+mechanical citation gate over that extraction's `risks[]`/`review_focus[]`
+file/endpoint citations, sibling to `groundFindings`/`groundingSummary` but
+kept separate — see `INSIGHTS.md`'s 2026-08-24 "Codebase Patterns" entry for
+why the two gates aren't merged.
+
+`buildRiskBriefMessages(input: RiskBriefPromptInput): ChatMessage[]` is the
+pure, exported prompt assembler `extractRiskBrief` calls internally and sends
+verbatim — a caller (e.g. `server/src/modules/reviews/risk-brief.ts`, to fit
+the assembled prompt to a token budget) may call it directly, repeatedly,
+against candidate content shapes, and trust that whatever it measures is
+exactly what will be sent.
 
 ## Testing
 

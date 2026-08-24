@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { MockLLMProvider } from '../../server/src/adapters/mocks.js';
-import { extractRiskBrief, groundRiskBrief } from '../src/index.js';
+import { extractRiskBrief, buildRiskBriefMessages, groundRiskBrief } from '../src/index.js';
 
 describe('extractRiskBrief', () => {
   const fixture = {
@@ -104,6 +104,30 @@ describe('extractRiskBrief', () => {
     expect(user).not.toContain('## Diff stat');
     expect(user).not.toContain('## Linked ticket');
     expect(user).not.toContain('## Referenced plan/spec excerpts');
+  });
+
+  it('anti-drift: buildRiskBriefMessages(input) deep-equals what extractRiskBrief actually sends', async () => {
+    const promptInput = {
+      title: 'Add rate limiting',
+      description: 'Adds a token-bucket limiter to public endpoints.',
+      intent: 'Prevent abuse of public API endpoints.',
+      blastSummary: 'Affects endpoints: POST /api/search.',
+      diffStat: 'src/middleware/rate-limit.ts | 40 ++++',
+      ticket: { title: 'RATE-42: abuse reports', body: 'Users are hammering /api/search.' },
+      planExcerpts: [{ path: 'docs/plans/rate-limit.md', content: 'Plan: add limiter.' }],
+    };
+
+    const expectedMessages = buildRiskBriefMessages(promptInput);
+
+    const llm = new MockLLMProvider('openai', {
+      structuredBySchema: { RiskBriefExtraction: fixture },
+    });
+
+    await extractRiskBrief({ llm, model: 'gpt-4.1', ...promptInput });
+
+    expect(llm.calls).toHaveLength(1);
+    const req = llm.calls[0]!.req as { messages: unknown };
+    expect(req.messages).toEqual(expectedMessages);
   });
 });
 

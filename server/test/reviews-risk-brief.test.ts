@@ -139,6 +139,12 @@ function makeContainer(opts: {
         updatedAt: new Date(),
       }),
     },
+    // Deterministic stub matching `approxTokens` — every fixture in this
+    // file is well under the 8,000-token budget, so no test here exercises
+    // trimming; that lives in `reviews-risk-brief-budget.test.ts`. Needed
+    // regardless: `computeRiskBrief` reads `container.tokenizer` on every
+    // call now, and this hand-rolled `Container` cast has no real one.
+    tokenizer: { count: (t: string) => Math.ceil(t.length / 4) },
   } as unknown as Container;
 }
 

@@ -3,13 +3,16 @@ import {
   extractRiskBrief,
   groundRiskBrief,
   riskBriefGroundingSummary,
+  buildRiskBriefMessages,
   type RiskBriefTicketInput,
   type RiskBriefPlanExcerptInput,
+  type RiskBriefPromptInput,
 } from '@devdigest/reviewer-core';
 import type { Container } from '../../platform/container.js';
 import type { RunLogger } from '../../platform/run-logger.js';
 import type * as schema from '../../db/schema.js';
 import type { PullRow } from '../../db/rows.js';
+import type { Tokenizer } from '../../adapters/tokenizer/index.js';
 import { resolveFeatureModel } from '../settings/feature-models.js';
 import { getOrComputeIntent, isSafePlanRefPath, type IntentLog } from './intent.js';
 import { buildPrBlastRadius } from './blast.js';
@@ -65,6 +68,27 @@ const MAX_RISK_BRIEF_PLAN_EXCERPT_CHARS = 20_000;
  */
 const RISK_BRIEF_TIMEOUT_MS = 30_000;
 
+/**
+ * Whole-assembled-prompt token budget (SPEC-03 amendment, AC26/OQ8) — a
+ * decided number, not a measurement (OQ8's resolution: 8,000 tokens,
+ * counted by `Tokenizer.count()`, no new counting logic). The per-section
+ * caps above (`MAX_RISK_BRIEF_*`) bound each input independently but never
+ * bounded the *assembled* prompt, so a PR under every per-section cap could
+ * still exceed a real model's context window. Measured as
+ * `tokenizer.count(system) + tokenizer.count(user)` over
+ * `buildRiskBriefMessages`'s output — the sum of the two per-message counts
+ * (AC25's confirmed reading of "combined token count"), never a
+ * concatenation of the two strings.
+ */
+const RISK_BRIEF_PROMPT_TOKEN_BUDGET = 8_000;
+
+/** Fixed ladder of shrinking per-excerpt truncation lengths tried on the
+ *  single surviving plan/spec excerpt before it is dropped entirely
+ *  (AC31, the confirmed "reduce truncation length" step between "drop from
+ *  the end" and "drop it entirely"). Starts below
+ *  `MAX_RISK_BRIEF_PLAN_EXCERPT_CHARS`. */
+const RISK_BRIEF_EXCERPT_CHAR_LADDER = [10_000, 5_000, 2_000, 1_000, 500];
+
 // ---------------------------------------------------------------------------
 // Logging — same dual shape (`RunLogger` | Fastify-style logger) as
 // `intent.ts`'s `IntentLog`. `logInfo`/`logWarn` are NOT exported from
@@ -116,16 +140,38 @@ export function riskLevelFor(risks: Risk[]): RiskSeverity {
 // gated behind a "no other signal" check.
 // ---------------------------------------------------------------------------
 
+/**
+ * Diff-stat block, generalized with an optional row cap + sort mode so the
+ * fitter (`fitRiskBriefPromptToBudget` below) can re-render smaller
+ * candidates without duplicating this logic. Callers outside the fitter
+ * (the "signals" log line) use the defaults, which reproduce the pre-budget
+ * behavior byte-for-byte: cap at `MAX_RISK_BRIEF_DIFF_STAT_FILES`, original
+ * (unsorted) row order.
+ *
+ * `sortByChurn` is only ever `true` while the fitter is actively trimming
+ * (AC32) — retains the largest `additions + deletions`, stable tiebreak on
+ * `path` when churn is equal so the same PR doesn't produce two different
+ * prompts across runs. Floor is the header line alone, never nothing.
+ */
 function buildDiffStat(
   files: { path: string; additions: number; deletions: number }[],
-  pull: PullRow,
+  pull: Pick<PullRow, 'filesCount' | 'additions' | 'deletions'>,
+  maxFiles: number = MAX_RISK_BRIEF_DIFF_STAT_FILES,
+  sortByChurn = false,
 ): string | undefined {
   if (pull.filesCount === 0 && pull.additions === 0 && pull.deletions === 0) return undefined;
   const header = `${pull.filesCount} file(s) changed (+${pull.additions}/-${pull.deletions})`;
   if (files.length === 0) return header;
-  const lines = files
-    .slice(0, MAX_RISK_BRIEF_DIFF_STAT_FILES)
+  const ordered = sortByChurn
+    ? [...files].sort((a, b) => {
+        const churn = b.additions + b.deletions - (a.additions + a.deletions);
+        return churn !== 0 ? churn : a.path.localeCompare(b.path);
+      })
+    : files;
+  const lines = ordered
+    .slice(0, Math.max(0, maxFiles))
     .map((f) => `- ${f.path} (+${f.additions}/-${f.deletions})`);
+  if (lines.length === 0) return header;
   return `${header}\n${lines.join('\n')}`;
 }
 
@@ -139,7 +185,18 @@ function buildDiffStat(
 // allowlist already follows for files, per the plan's "Grounding" bullet).
 // ---------------------------------------------------------------------------
 
-function buildBlastSummary(blast: PrBlastRadius): string | undefined {
+/**
+ * Blast-radius summary block, generalized with an optional symbol cap so
+ * the fitter can re-render smaller candidates (AC28-30). The `status:` line
+ * and the `Endpoints:`/`Crons:` lines are NEVER capped — those are what
+ * `review_focus.endpoint` citations are grounded against (AC30's "keeping
+ * the status:/Endpoints:/Crons: lines" requirement) — only the per-symbol
+ * caller list shrinks.
+ */
+function buildBlastSummary(
+  blast: PrBlastRadius,
+  maxSymbols: number = MAX_RISK_BRIEF_BLAST_SYMBOLS,
+): string | undefined {
   if (
     blast.symbols.length === 0 &&
     blast.impacted_endpoints.length === 0 &&
@@ -148,7 +205,7 @@ function buildBlastSummary(blast: PrBlastRadius): string | undefined {
     return undefined;
   }
   const lines: string[] = [`status: ${blast.status}${blast.reason ? ` (${blast.reason})` : ''}`];
-  for (const sym of blast.symbols.slice(0, MAX_RISK_BRIEF_BLAST_SYMBOLS)) {
+  for (const sym of blast.symbols.slice(0, Math.max(0, maxSymbols))) {
     const callerCount = sym.callers_truncated ? `${sym.callers.length}+` : `${sym.callers.length}`;
     lines.push(`- ${sym.name} (${sym.file}): ${callerCount} caller(s)`);
   }
@@ -223,6 +280,192 @@ async function resolvePlanExcerpts(
 }
 
 // ---------------------------------------------------------------------------
+// fitRiskBriefPromptToBudget — the whole-prompt token-budget fitter
+// (SPEC-03 amendment, AC25-35). Mirrors `renderRepoMap`'s proven signature
+// shape (`modules/repo-intel/pipeline/repo-map.ts:28-57`): a plain, pure,
+// exported function taking `Tokenizer` as a parameter — never reaching into
+// `container.tokenizer` itself — so every case here is a plain unit test
+// with no `Container` cast at all.
+// ---------------------------------------------------------------------------
+
+/** The raw, not-yet-rendered signals the fitter needs so it can re-render
+ *  the diff-stat / blast-summary blocks at smaller sizes — the already-
+ *  rendered `RiskBriefPromptInput` alone isn't enough for that (AC28-32
+ *  require trimming by structure, not by re-truncating rendered text). */
+export interface RiskBriefFitSections {
+  title: string;
+  description?: string;
+  intent?: string;
+  files: { path: string; additions: number; deletions: number }[];
+  pull: Pick<PullRow, 'filesCount' | 'additions' | 'deletions'>;
+  blast?: PrBlastRadius;
+  ticket?: RiskBriefTicketInput;
+  planExcerpts: RiskBriefPlanExcerptInput[];
+}
+
+export interface RiskBriefFitSectionReport {
+  planExcerpts: { kept: number; total: number };
+  diffStatFiles: { kept: number; total: number };
+  blastSymbols: { kept: number; total: number };
+  ticketBodyDropped: boolean;
+}
+
+export interface RiskBriefFitResult {
+  /** The final, possibly-trimmed content — feed straight into
+   *  `extractRiskBrief` alongside `llm`/`model`/etc. */
+  input: RiskBriefPromptInput;
+  /** `false` when the untrimmed assembly already fit (AC27) — no trimming
+   *  was applied and `input` is byte-identical to the untrimmed render. */
+  trimmed: boolean;
+  /** Token count of the untrimmed candidate, before any trimming. */
+  tokensBefore: number;
+  /** Token count of `input` — the final candidate actually returned. */
+  tokens: number;
+  budget: number;
+  report: RiskBriefFitSectionReport;
+}
+
+/**
+ * Fit the assembled risk-brief prompt under `budget` tokens by prioritized,
+ * re-measured trimming (AC28-30). Never trims `title`/`description` (AC33)
+ * — those are structural fields on `RiskBriefFitSections`, not part of any
+ * trim step below. The injection-defense note and the output-schema
+ * instructions are ALSO never trimmed, but that guarantee is structural for
+ * a different reason: they live inside `reviewer-core`'s `SYSTEM_PROMPT` /
+ * `RISK_BRIEF_INJECTION_NOTE` and are never inputs to this function at all.
+ *
+ * Ladder, in order, each step re-measuring and stopping the instant the
+ * count is `<= budget` (AC28):
+ *   1. Plan/spec excerpts — drop from the end one at a time until one
+ *      remains (AC31); then shrink that survivor's truncation length via
+ *      `RISK_BRIEF_EXCERPT_CHAR_LADDER`; then drop it entirely.
+ *   2. Diff-stat file rows — re-rendered below `MAX_RISK_BRIEF_DIFF_STAT_FILES`,
+ *      retaining the largest `additions + deletions` with a stable path
+ *      tiebreak (AC32). Floor is the header line alone, never nothing.
+ *   3. Blast-radius symbols — re-rendered below
+ *      `MAX_RISK_BRIEF_BLAST_SYMBOLS`, keeping the `status:`/`Endpoints:`/
+ *      `Crons:` lines.
+ *   4. Linked-ticket body — dropped; `ticket.title` is never trimmed (AC28).
+ *
+ * Does NOT throw when the floor is still over budget — returns the
+ * fully-trimmed candidate with `tokens > budget` and lets the caller
+ * (`computeRiskBrief`) decide what "still too big" means (AC34).
+ */
+export function fitRiskBriefPromptToBudget(
+  sections: RiskBriefFitSections,
+  tokenizer: Tokenizer,
+  budget: number,
+): RiskBriefFitResult {
+  const totalExcerpts = sections.planExcerpts.length;
+  const totalFiles = sections.files.length;
+  const totalSymbols = sections.blast?.symbols.length ?? 0;
+  const diffRowsTotal = Math.min(totalFiles, MAX_RISK_BRIEF_DIFF_STAT_FILES);
+  const blastSymbolsTotal = Math.min(totalSymbols, MAX_RISK_BRIEF_BLAST_SYMBOLS);
+
+  let excerpts = sections.planExcerpts;
+  let diffFileLimit = MAX_RISK_BRIEF_DIFF_STAT_FILES;
+  let sortDiffByChurn = false;
+  let symbolLimit = MAX_RISK_BRIEF_BLAST_SYMBOLS;
+  let ticket = sections.ticket;
+  let ticketBodyDropped = false;
+
+  const build = (): RiskBriefPromptInput => {
+    const diffStat = buildDiffStat(sections.files, sections.pull, diffFileLimit, sortDiffByChurn);
+    const blastSummary = sections.blast ? buildBlastSummary(sections.blast, symbolLimit) : undefined;
+    return {
+      title: sections.title,
+      ...(sections.description ? { description: sections.description } : {}),
+      ...(sections.intent ? { intent: sections.intent } : {}),
+      ...(blastSummary ? { blastSummary } : {}),
+      ...(diffStat ? { diffStat } : {}),
+      ...(ticket ? { ticket } : {}),
+      ...(excerpts.length > 0 ? { planExcerpts: excerpts } : {}),
+    };
+  };
+
+  const measure = (input: RiskBriefPromptInput): number => {
+    const messages = buildRiskBriefMessages(input);
+    const system = messages.find((m) => m.role === 'system')?.content ?? '';
+    const user = messages.find((m) => m.role === 'user')?.content ?? '';
+    // AC25's confirmed reading: sum of the two per-message counts, never a
+    // concatenation of the two strings.
+    return tokenizer.count(system) + tokenizer.count(user);
+  };
+
+  const reportFor = (): RiskBriefFitSectionReport => ({
+    planExcerpts: { kept: excerpts.length, total: totalExcerpts },
+    diffStatFiles: { kept: Math.min(diffFileLimit, diffRowsTotal), total: diffRowsTotal },
+    blastSymbols: { kept: Math.min(symbolLimit, blastSymbolsTotal), total: blastSymbolsTotal },
+    ticketBodyDropped,
+  });
+
+  let input = build();
+  const tokensBefore = measure(input);
+  let tokens = tokensBefore;
+
+  if (tokens <= budget) {
+    return { input, trimmed: false, tokensBefore, tokens, budget, report: reportFor() };
+  }
+
+  // 1a. Drop plan/spec excerpts from the end, one at a time, until one remains.
+  while (excerpts.length > 1 && tokens > budget) {
+    excerpts = excerpts.slice(0, -1);
+    input = build();
+    tokens = measure(input);
+  }
+
+  // 1b. Shrink the survivor's truncation length — always slices from the
+  // original (already 20,000-char-capped) content, never cumulatively.
+  const survivor = excerpts[0];
+  if (survivor && excerpts.length === 1 && tokens > budget) {
+    for (const limit of RISK_BRIEF_EXCERPT_CHAR_LADDER) {
+      if (tokens <= budget) break;
+      excerpts = [{ path: survivor.path, content: survivor.content.slice(0, limit) }];
+      input = build();
+      tokens = measure(input);
+    }
+  }
+
+  // 1c. Drop the last excerpt entirely.
+  if (excerpts.length === 1 && tokens > budget) {
+    excerpts = [];
+    input = build();
+    tokens = measure(input);
+  }
+
+  // 2. Diff-stat file rows — switch to churn-sorted order, then shrink the
+  //    row count one at a time. Floor is the header line alone.
+  if (tokens > budget && diffRowsTotal > 0) {
+    sortDiffByChurn = true;
+    while (diffFileLimit > 0 && tokens > budget) {
+      diffFileLimit -= 1;
+      input = build();
+      tokens = measure(input);
+    }
+  }
+
+  // 3. Blast-radius symbols — `status:`/`Endpoints:`/`Crons:` lines survive
+  //    (buildBlastSummary never caps those), only the symbol list shrinks.
+  if (tokens > budget && blastSymbolsTotal > 0) {
+    while (symbolLimit > 0 && tokens > budget) {
+      symbolLimit -= 1;
+      input = build();
+      tokens = measure(input);
+    }
+  }
+
+  // 4. Linked-ticket body — title is never trimmed.
+  if (tokens > budget && ticket?.body) {
+    ticket = { title: ticket.title };
+    ticketBodyDropped = true;
+    input = build();
+    tokens = measure(input);
+  }
+
+  return { input, trimmed: true, tokensBefore, tokens, budget, report: reportFor() };
+}
+
+// ---------------------------------------------------------------------------
 // getOrComputeRiskBrief — the shared entry point.
 // ---------------------------------------------------------------------------
 
@@ -291,6 +534,8 @@ async function computeRiskBrief(
     // edge case).
     const allowlistEndpoints = new Set([...blast.impacted_endpoints, ...blast.impacted_crons]);
 
+    // Untrimmed renders, used only for the "signals" log line below — the
+    // fitter re-renders its own (possibly trimmed) candidates independently.
     const diffStat = buildDiffStat(files, pull);
     const blastSummary = buildBlastSummary(blast);
 
@@ -309,16 +554,51 @@ async function computeRiskBrief(
     const llm = await container.llm(provider);
     logInfo(log, `PR risk brief: model resolved — ${provider}/${model}`, { prId: pull.id });
 
+    // Whole-prompt token budget (AC25-35) — measured immediately before the
+    // structured call, after every signal above has been assembled.
+    const fit = fitRiskBriefPromptToBudget(
+      {
+        title: pull.title,
+        ...(description ? { description } : {}),
+        ...(intent?.intent ? { intent: intent.intent } : {}),
+        files,
+        pull,
+        blast,
+        ...(ticket ? { ticket } : {}),
+        planExcerpts,
+      },
+      container.tokenizer,
+      RISK_BRIEF_PROMPT_TOKEN_BUDGET,
+    );
+
+    if (fit.tokens > RISK_BRIEF_PROMPT_TOKEN_BUDGET) {
+      // AC34: exhausted the full trim ladder and still over budget — throw
+      // here, before `extractRiskBrief` is ever reached, so the existing
+      // `catch` below handles this exactly like today's degrade path (no LLM
+      // call, no `upsertPrBrief`, prior cached brief left untouched).
+      throw new Error(
+        `PR risk brief: prompt exceeds the ${RISK_BRIEF_PROMPT_TOKEN_BUDGET}-token budget even after full ` +
+          `trim (${fit.tokens} tokens)`,
+      );
+    }
+
+    if (fit.trimmed) {
+      const r = fit.report;
+      logInfo(
+        log,
+        `PR risk brief: prompt trimmed — plan excerpts ${r.planExcerpts.kept}/${r.planExcerpts.total}, ` +
+          `diff rows ${r.diffStatFiles.kept}/${r.diffStatFiles.total}, ` +
+          `blast symbols ${r.blastSymbols.kept}/${r.blastSymbols.total}` +
+          `${r.ticketBodyDropped ? ', ticket body dropped' : ''}; ` +
+          `${fit.tokensBefore}→${fit.tokens} tokens (budget ${RISK_BRIEF_PROMPT_TOKEN_BUDGET})`,
+        { prId: pull.id },
+      );
+    }
+
     const outcome = await extractRiskBrief({
       llm,
       model,
-      title: pull.title,
-      ...(description ? { description } : {}),
-      ...(intent?.intent ? { intent: intent.intent } : {}),
-      ...(blastSummary ? { blastSummary } : {}),
-      ...(diffStat ? { diffStat } : {}),
-      ...(ticket ? { ticket } : {}),
-      ...(planExcerpts.length > 0 ? { planExcerpts } : {}),
+      ...fit.input,
       sessionId: `${repo.owner}/${repo.name}#${pull.number}:risk-brief`,
       timeoutMs: RISK_BRIEF_TIMEOUT_MS,
     });

@@ -190,7 +190,13 @@ What the reviewer actually sends to the model is assembled in
   `GET /pulls/:id/brief` (compute-if-missing, cached) and
   `POST /pulls/:id/brief/refresh` (forced recompute, rate-limited). Failures
   degrade to `undefined`/a 404 without writing a partial, leaving any prior
-  cached brief intact.
+  cached brief intact. The assembled prompt is capped at an 8,000-token
+  whole-prompt budget (`RISK_BRIEF_PROMPT_TOKEN_BUDGET`), counted with the
+  `Tokenizer` adapter immediately before the LLM call; an over-budget prompt
+  is trimmed in a fixed priority order (plan/spec excerpts, then diff-stat
+  rows, then blast-radius symbols, then the linked ticket's body — title and
+  description are never trimmed) and, if it still doesn't fit, the compute
+  degrades via the same failure path as any other risk-brief error.
 
 ## Testing
 

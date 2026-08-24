@@ -75,9 +75,11 @@ export {
 // from the post-grounding risks, never self-reported).
 export {
   extractRiskBrief,
+  buildRiskBriefMessages,
   DEFAULT_RISK_BRIEF_MAX_RETRIES,
   type RiskBriefExtractionInput,
   type RiskBriefExtractionOutcome,
+  type RiskBriefPromptInput,
   type RiskBriefTicketInput,
   type RiskBriefPlanExcerptInput,
 } from './review/risk-brief.js';

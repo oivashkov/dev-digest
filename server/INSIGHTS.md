@@ -127,7 +127,46 @@ outright. Any future feature with a similar "salvage what's valid, cap the
 rest" AC should copy THIS split, not the conventions 1:1 pattern.
 `src/modules/onboarding/{prompt,helpers,service}.ts`.
 
+### 2026-08-24 — A fit-to-budget trimmer needs raw structured signals, not the already-rendered prompt-input shape
+
+**What:** `risk-brief.ts`'s `fitRiskBriefPromptToBudget(sections, tokenizer,
+budget)` takes a *different*, wider input type (`RiskBriefFitSections`:
+raw `files`/`blast`/`ticket`/`planExcerpts`) than the
+`RiskBriefPromptInput` it eventually produces and measures — it re-renders
+`diffStat`/`blastSummary` internally at each candidate size via
+`buildDiffStat`/`buildBlastSummary` (both generalized with an optional
+row/symbol-cap + sort-mode parameter) rather than truncating the
+already-rendered strings.
+**Why:** AC32's trim rule ("retain the largest `additions + deletions`,
+stable path tiebreak") is a *structural* re-selection of which file rows
+appear, not a text truncation — you cannot recover "which of these 20
+already-joined lines had the highest churn" from the joined string alone.
+**Rejected:** having the fitter accept a plain `RiskBriefPromptInput` and
+truncate its `diffStat` string by character count — simpler signature, but
+loses the ability to reorder rows by churn and makes the "floor is the
+header line alone" guarantee (AC32) an ad-hoc string-slicing rule instead
+of `buildDiffStat`'s existing, already-tested row-selection logic.
+`src/modules/reviews/risk-brief.ts` (`RiskBriefFitSections`,
+`fitRiskBriefPromptToBudget`).
+
 ## What Works
+
+- **2026-08-24** — Testing a fit-to-budget function against a *fixed*
+  budget constant (here `RISK_BRIEF_PROMPT_TOKEN_BUDGET = 8_000`, not
+  parameterized for tests) works at two tiers, and only the pure exported
+  fitter makes the first tier practical: (1) unit tests call
+  `fitRiskBriefPromptToBudget(sections, tokenizer, budget)` directly with a
+  small hand-picked `budget` (e.g. `full.tokens - 1`, computed by first
+  calling the fitter with `Number.MAX_SAFE_INTEGER`) to assert ladder order
+  and tiebreaks cheaply and deterministically; (2) integration tests going
+  through `getOrComputeRiskBrief` — where the real 8,000-token constant
+  applies — need genuinely large fixtures (title/description ~20,000 chars
+  each to force AC34's unfittable case; ~15,000-char plan excerpts to force
+  AC35's trim-log case) since there's no budget override on that path.
+  Don't try to make case (2) precise — assert structural properties (a
+  trim log fired, a section's kept-count dropped) rather than exact token
+  counts, which depend on `wrapUntrusted`/system-prompt overhead you don't
+  control from the test. `server/test/reviews-risk-brief-budget.test.ts`.
 
 - **2026-08-23** — A `GET` fired immediately after `container.jobs.enqueue()`
   resolves (no `setTimeout`/fake timer) reliably observes the job's

@@ -49,6 +49,24 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-24** — when a package-internal prompt assembler needs to become
+  measurable by a caller (e.g. `server/` fitting a prompt to a token
+  budget), split the input type rather than exporting the full call-time
+  input: `risk-brief.ts`'s `buildMessages(input: RiskBriefExtractionInput)`
+  became `export function buildRiskBriefMessages(input:
+  RiskBriefPromptInput)`, where `RiskBriefPromptInput` holds only the
+  content fields (title/description/intent/blastSummary/diffStat/ticket/
+  planExcerpts) and `RiskBriefExtractionInput extends RiskBriefPromptInput`
+  adds the call-time fields (`llm`, `model`, `sessionId`, `maxRetries`,
+  `timeoutMs`). This lets a caller assemble/measure content before it has
+  resolved a model. Guard the "measured ≡ sent" invariant with an
+  anti-drift test that calls the exported assembler directly, then calls
+  the real extraction function with the same content and asserts the
+  captured `LLMProvider` request's `messages` deep-equals the assembler's
+  output — `test/risk-brief.test.ts`'s "anti-drift" test. If a future
+  edit makes the extraction function build messages differently from the
+  exported assembler (e.g. post-processing the array before sending), this
+  is the test that catches it; don't delete or weaken it.
 - **2026-08-24** — `grounding.ts` now holds two independent gates:
   `groundFindings`/`groundingSummary` (diff-line citations, for
   `reviewPullRequest`) and `groundRiskBrief`/`riskBriefGroundingSummary`
