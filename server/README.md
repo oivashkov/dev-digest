@@ -74,7 +74,7 @@ flowchart TB
     polling["polling<br/>/repos/:id/poll"]
   end
   subgraph Review["Review & runs"]
-    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)<br/>/pulls/:id/intent (GET) · /pulls/:id/intent/refresh (POST)"]
+    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)<br/>/pulls/:id/intent (GET) · /pulls/:id/intent/refresh (POST)<br/>/pulls/:id/brief (GET) · /pulls/:id/brief/refresh (POST)"]
   end
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id<br/>/agents/:id/skills (link/reorder)"]
@@ -171,6 +171,26 @@ What the reviewer actually sends to the model is assembled in
   [`../docs/plans/intent-layer.md`](../docs/plans/intent-layer.md) for the full
   design and [`../reviewer-core/README.md`](../reviewer-core/README.md) for
   `classifyIntent` itself.
+- **The PR risk brief is compute-if-missing, same shape as intent.**
+  `modules/reviews/risk-brief.ts`'s `getOrComputeRiskBrief(container,
+  workspaceId, repo, pull, opts, log)` mirrors `getOrComputeIntent`'s
+  cache-read → in-flight-dedup → compute pipeline exactly, including a
+  module-local `inflight` map keyed by PR id so concurrent callers share one
+  compute rather than issuing duplicate LLM calls. It calls
+  `getOrComputeIntent` first for intent context, gathers a capped diff-stat
+  summary, the PR's blast radius, and path-guarded plan/spec excerpts, then
+  makes a single structured call into `reviewer-core`'s `extractRiskBrief`.
+  Every `risks[]`/`review_focus[]` item then passes a mechanical grounding
+  gate (`groundRiskBrief`) that drops anything citing a file or endpoint that
+  isn't in the PR's real changed-file/endpoint set — never trusting the
+  model's own citations. `risk_level` is computed server-side afterward, as
+  the max severity over the surviving (post-grounding) risks; it is never
+  part of the model's output. The result persists to `pr_brief` with the
+  `headSha` it was computed against embedded. The same function backs
+  `GET /pulls/:id/brief` (compute-if-missing, cached) and
+  `POST /pulls/:id/brief/refresh` (forced recompute, rate-limited). Failures
+  degrade to `undefined`/a 404 without writing a partial, leaving any prior
+  cached brief intact.
 
 ## Testing
 

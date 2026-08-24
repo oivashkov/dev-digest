@@ -3,6 +3,7 @@ import type {
   FindingActionKind,
   PrBlastRadius,
   PrIntentRecord,
+  PrRiskBrief,
   RunEventKind,
   RunTrace,
   SmartDiff,
@@ -15,6 +16,7 @@ import { ReviewRunExecutor, type Logger } from './run-executor.js';
 import { actOnFinding as actOnFindingImpl } from './findings.js';
 import { reviewToDto } from './helpers.js';
 import { getOrComputeIntent as getOrComputeIntentImpl, computeScopeDrift } from './intent.js';
+import { getOrComputeRiskBrief as getOrComputeRiskBriefImpl } from './risk-brief.js';
 import { buildSmartDiff } from './smart-diff.js';
 import { buildPrBlastRadius } from './blast.js';
 
@@ -230,6 +232,38 @@ export class ReviewService {
     );
 
     return { ...intent, pr_id: prId, scope_drift: scopeDrift };
+  }
+
+  // ===========================================================================
+  // PR Why + Risk Brief (`GET /pulls/:id/brief` compute-if-missing, `POST
+  // /pulls/:id/brief/refresh` forced) — lazy compute-if-missing + refresh,
+  // modelled line-for-line on `getOrComputeIntent` above.
+  // ===========================================================================
+
+  /**
+   * Workspace-scoped PR + repo lookup (same shape as `getOrComputeIntent`),
+   * then delegates all signal-gathering/grounding/caching to the shared
+   * `getOrComputeRiskBrief` (`./risk-brief.js`). Throws `NotFoundError` when
+   * the PR doesn't exist OR when computation couldn't produce a result (no
+   * cache and the fresh compute degraded to `undefined`) — both map to a 404
+   * via the shared error handler, the same contract `getOrComputeIntent`
+   * already uses.
+   */
+  async getOrComputeRiskBrief(
+    workspaceId: string,
+    prId: string,
+    opts: { force: boolean },
+    log: Logger,
+  ): Promise<PrRiskBrief> {
+    const pull = await this.repo.getPull(workspaceId, prId);
+    if (!pull) throw new NotFoundError('Pull request not found');
+    const repo = await this.repo.getRepo(pull.repoId);
+    if (!repo) throw new NotFoundError('Repo not found');
+
+    const brief = await getOrComputeRiskBriefImpl(this.container, workspaceId, repo, pull, opts, log);
+    if (!brief) throw new NotFoundError('PR risk brief not available');
+
+    return brief;
   }
 
   // ===========================================================================

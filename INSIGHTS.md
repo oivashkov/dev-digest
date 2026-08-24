@@ -276,6 +276,23 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-24** — Two pieces of PR Why + Risk Brief scaffolding already
+  existed, unused, before `specs/03-pr-why-risk-brief.md` was written:
+  `pr_brief` table (`{ prId, json }`, zero writers/readers,
+  `server/src/db/schema/reviews.ts:93-97`) and a registered `risk_brief`
+  `FeatureModelId` defaulting to `openai/gpt-4.1`
+  (`server/src/vendor/shared/contracts/platform.ts:64-70`). A **third**
+  piece, `brief.ts`'s `PrBrief { intent, blast, risks, history }`, is a
+  false match — same "zero writers" status but a different shape (no
+  `what`/`why`/`risk_level`/`review_focus`). SPEC-03 resolves this the same
+  way `blast.ts` already resolved the identical situation for
+  `PrBlastRadius` (see its own doc-comment, `blast.ts:1-19`): reuse the
+  table and the feature-model id as-is, but add a **new** file
+  `contracts/risk-brief.ts` rather than reshaping the old `PrBrief` —
+  `PrBrief` stays untouched and still unpopulated. Grep for `pr_brief`,
+  `risk_brief`, and `PrBrief` before assuming any of the three is free real
+  estate for a new feature.
+
 - **2026-08-18** — Extending a Zod contract with a `.default([])` field
   breaks every existing *hand-written object literal* typed as that schema
   at compile time, even though `.default()` makes the field optional on

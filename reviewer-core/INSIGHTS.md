@@ -49,6 +49,17 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-24** — `grounding.ts` now holds two independent gates:
+  `groundFindings`/`groundingSummary` (diff-line citations, for
+  `reviewPullRequest`) and `groundRiskBrief`/`riskBriefGroundingSummary`
+  (file/endpoint citations, for `extractRiskBrief` in `review/risk-brief.ts`).
+  Deliberately not merged into one generic gate — the input shapes (a
+  `Finding` with `start_line`/`end_line` vs. a `Risk`'s `file_refs[]` /
+  `ReviewFocusItem`'s `file`+`endpoint`) and drop granularity (per-line-range
+  vs. per-citation) differ enough that a shared abstraction would add
+  indirection without removing duplication. If a third citation-style gate is
+  ever added, reconsider a shared `dropped: {reason}` type at minimum, but
+  keep the per-domain check functions separate.
 - **2026-08-18** — a new optional `PromptParts` slot (e.g. `intent`) that gets
   written into `assemblePrompt`'s `assembly` trace object must ALSO be added
   to the `PromptAssembly` Zod schema in
@@ -74,7 +85,21 @@ _None yet._
 
 ## Tool & Library Notes
 
-_None yet._
+- **2026-08-24** — a Zod field in a structured-output schema (`completeStructured`,
+  which routes through `openai/helpers/zod`'s `zodResponseFormat`) must use
+  `.nullish()`, not bare `.optional()`, for any field the model may
+  legitimately omit. OpenAI's strict structured-outputs mode requires every
+  property to be present in the JSON Schema's `required` list; a bare
+  `.optional()` field triggers `zodResponseFormat`'s own console warning
+  ("uses `.optional()` without `.nullable()`... this will become an error in
+  a future version of the SDK") and the model is expected to emit `null`
+  instead of omitting the key. Caught live on `ReviewFocusItem.line`/
+  `.endpoint` (`@devdigest/shared`'s `contracts/risk-brief.ts`) — fixed to
+  `.nullish()`; every consumer reading the field must then use `!= null`
+  (not `!== undefined`) and `?? undefined` when handing the value to a
+  `T | undefined`-typed prop. `IntentExtraction`/`Risk` in `contracts/brief.ts`
+  sidestep this entirely by having no optional fields at all — that's the
+  simpler option when the field is never truly absent.
 
 ## Recurring Errors & Fixes
 

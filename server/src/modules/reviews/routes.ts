@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { PrBlastRadius, PrIntentRecord, RunRequest, SmartDiff } from '@devdigest/shared';
+import { PrBlastRadius, PrIntentRecord, PrRiskBrief, RunRequest, SmartDiff } from '@devdigest/shared';
 import type { RunEvent } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
@@ -16,6 +16,8 @@ import { ReviewService } from './service.js';
  *   POST   /findings/:id/(accept|dismiss)              → finding actions
  *   GET    /pulls/:id/intent                           → PR intent (compute-if-missing, cached)
  *   POST   /pulls/:id/intent/refresh                   → PR intent (forced recompute)
+ *   GET    /pulls/:id/brief                            → PR why + risk brief (compute-if-missing, cached)
+ *   POST   /pulls/:id/brief/refresh                    → PR why + risk brief (forced recompute)
  *   GET    /pulls/:id/smart-diff                       → files grouped by review risk (deterministic, no LLM)
  *   GET    /pulls/:id/blast                            → blast radius: symbols/callers/endpoints/crons (deterministic, no LLM)
  */
@@ -196,6 +198,31 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
     async (req) => {
       const { workspaceId } = await getContext(container, req);
       return service.getOrComputeIntent(workspaceId, req.params.id, { force: true }, req.log);
+    },
+  );
+
+  // ---- PR why + risk brief: lazy compute-if-missing, cached ----------------
+  app.get(
+    '/pulls/:id/brief',
+    { schema: { params: IdParams, response: { 200: PrRiskBrief } } },
+    async (req) => {
+      const { workspaceId } = await getContext(container, req);
+      return service.getOrComputeRiskBrief(workspaceId, req.params.id, { force: false }, req.log);
+    },
+  );
+
+  // ---- PR why + risk brief: forced refresh ----------------------------------
+  // Same rate limit as POST /pulls/:id/intent/refresh — this is a real
+  // LLM-triggering endpoint too, just for the risk-brief extraction call.
+  app.post(
+    '/pulls/:id/brief/refresh',
+    {
+      schema: { params: IdParams, response: { 200: PrRiskBrief } },
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (req) => {
+      const { workspaceId } = await getContext(container, req);
+      return service.getOrComputeRiskBrief(workspaceId, req.params.id, { force: true }, req.log);
     },
   );
 

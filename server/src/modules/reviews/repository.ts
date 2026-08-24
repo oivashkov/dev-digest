@@ -1,6 +1,6 @@
 import type { Db } from '../../db/client.js';
 import * as t from '../../db/schema.js';
-import type { Finding, Intent, RunSummary, RunTrace } from '@devdigest/shared';
+import type { Finding, Intent, PrRiskBrief, RunSummary, RunTrace } from '@devdigest/shared';
 
 /**
  * A2 — review data-access. The ONLY layer touching the DB for the review
@@ -144,6 +144,16 @@ export class ReviewRepository {
 
   getIntent(prId: string): Promise<Intent | undefined> {
     return pullRepo.getIntent(this.db, prId);
+  }
+
+  // ---- risk brief -----------------------------------------------------------
+
+  upsertPrBrief(prId: string, brief: PrRiskBrief): Promise<void> {
+    return pullRepo.upsertPrBrief(this.db, prId, brief);
+  }
+
+  getPrBrief(prId: string): Promise<PrRiskBrief | undefined> {
+    return pullRepo.getPrBrief(this.db, prId);
   }
 
   // ---- observability: agent_runs + run_traces ----------------------------

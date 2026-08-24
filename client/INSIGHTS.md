@@ -249,6 +249,48 @@ _None yet._
   Used to add the cost badge to `ReviewRunAccordion`'s header — zero
   contract/server changes. `client/src/app/repos/[repoId]/pulls/[number]/_components/FindingsTab/FindingsTab.tsx`
 
+- **2026-08-24** — `@devdigest/ui`'s `SeverityBadge` cannot render a
+  `RiskSeverity` (`'high'|'medium'|'low'`, from `@devdigest/shared`'s
+  `brief.ts`) — it's hardcoded to `Severity`
+  (`'CRITICAL'|'WARNING'|'SUGGESTION'|'INFO'`, `vendor/ui/primitives/tokens.ts`),
+  a completely different string domain used for `Finding.severity`. Building
+  `PrBriefCard`'s `risk_level` badge (SPEC-03), the correct pattern is the
+  generic `Badge` primitive (`color`/`bg`/`icon` props) with a local
+  `Record<RiskSeverity, {color, bg}>` map in the component's own
+  `constants.ts`, reusing the *existing* `--crit`/`--warn`/`--info` CSS vars
+  (already used by `tokens.ts`'s `SEV` map) rather than adding new tokens —
+  never try to coerce a `RiskSeverity` string into `SeverityBadge`'s prop
+  type or add a fourth `'low'`-shaped variant to `tokens.ts`.
+  `client/src/app/repos/[repoId]/pulls/[number]/_components/PrBriefCard/constants.ts`.
+
+- **2026-08-24** — `diff-viewer/FileCard`'s `open` state
+  (`useState(defaultOpen ?? ...)`) is a plain `useState` initializer — it
+  captures `defaultOpen` only at mount and does NOT react to `defaultOpen`
+  changing on a later render with the same component identity. A consumer
+  that needs an already-mounted, collapsed `FileCard` to force-open in
+  response to new props (SPEC-03 Step 7: a `review_focus[]` click landing on
+  a boilerplate file with no findings of its own, which defaults collapsed)
+  cannot just recompute `defaultOpen` and pass it down — nothing re-runs the
+  initializer. Fix from the *consumer* side (`FileCard.tsx` wasn't in this
+  step's Owned paths): give `FileCard` a `key` that changes exactly when the
+  file becomes/stops being the scroll target (`` `${path}::target-${n}` ``
+  vs plain `path`), forcing a remount so the initializer re-runs with the
+  new `defaultOpen`. Also incidentally solves "bumped nonce on the same
+  target re-triggers the scroll" for free, since the remount re-mounts
+  `CodeLine` too. `client/src/app/repos/[repoId]/pulls/[number]/_components
+  /SmartDiffViewer/SmartDiffViewer.tsx`,
+  `client/src/components/diff-viewer/FileCard/FileCard.tsx:61-63`.
+
+- **2026-08-24** — A folder's own `index.ts` barrel export (e.g.
+  `SmartDiffViewer/index.ts` exporting only `{ SmartDiffViewer }`) can lag
+  behind a type a sibling step needs to import (`ScrollTarget`), and adding
+  it isn't always in the touching step's Owned paths. `FindingsTab.tsx`
+  already has precedent for this: `import { RunHistory } from
+  "../RunHistory/RunHistory"` bypasses `RunHistory/index.ts` entirely.
+  Reused the same barrel-bypass — `import type { ScrollTarget } from
+  "../SmartDiffViewer/SmartDiffViewer"` — in both `DiffTab.tsx` and
+  `PrDetailView.tsx` rather than touching the barrel out-of-scope.
+
 - **2026-08-20** — `PrBlastRadius.symbols[].endpoints`/`.crons` (server's
   `@devdigest/shared/contracts/blast.ts`) are aggregated **per symbol**, not
   per caller — the contract has no caller→endpoint mapping (a caller-file's

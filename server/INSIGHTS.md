@@ -142,7 +142,17 @@ rest" AC should copy THIS split, not the conventions 1:1 pattern.
   like this — the race is already in the test's favor. `src/platform/jobs.ts`
   (`JobRunner.enqueue`).
 
-_None yet._
+- **2026-08-24** — For an `.it.test.ts` route test that computes intent FIRST
+  as a side effect (`getOrComputeRiskBrief` → `getOrComputeIntent` inside it,
+  same as `/pulls/:id/brief`), mocking BOTH providers up front
+  (`llm: { openai: riskBriefLlm, openrouter: intentLlm }`, each with its own
+  `structuredBySchema` fixture) is simpler than the `PUT /settings
+  {feature_models: {review_intent: {...}}}` override
+  `reviews-intent-routes.it.test.ts` uses — no extra request per test, and it
+  still stays hermetic per the 2026-08-18 "either fix shape works" note
+  below. Confirmed working for a route that (unlike `/pulls/:id/review`)
+  can't just omit mentioning `review_intent`'s provider.
+  `test/reviews-risk-brief-routes.it.test.ts`.
 
 ## What Doesn't Work
 
@@ -240,6 +250,20 @@ _None yet._
   fixes. `src/modules/*/routes.ts`
 
 ## Codebase Patterns
+
+- **2026-08-24** — For a single-column `jsonb` blob holding a WHOLE Zod-typed
+  object (e.g. `pr_brief.json` — one `PrRiskBrief`, unlike `pr_intent`'s
+  per-field typed columns), the read accessor's degrade-on-malformed strategy
+  is a whole-object `Schema.safeParse(row.json)` → `undefined` on failure, not
+  `getIntent()`'s per-field coalesce (`confidence ?? 0`). A single `safeParse`
+  is simpler here specifically because there's only one column to validate —
+  `getIntent()`'s field-by-field coalescing exists because `pr_intent` spreads
+  the same data across several nullable columns, each needing its own
+  fallback. Don't port the coalesce pattern to a single-jsonb-column table;
+  don't port whole-object `safeParse` to a multi-column one either — the two
+  degrade strategies exist for the shapes they were built for.
+  `server/src/modules/reviews/repository/pull.repo.ts` (`getPrBrief` vs.
+  `getIntent`).
 
 - **2026-08-23** — `RepoIntel.getCriticalPaths(repoId)` is implemented, not a
   stub — but it returns `string[][]`, dependency **chains** seeded from
@@ -372,6 +396,21 @@ _None yet._
   assuming `GET /skills/:id/versions` returning `[]` is a bug in the
   versions feature itself. `src/db/seed.ts` (skill-seeding loop),
   `src/modules/skills/repository.ts` (`insert`/`snapshotVersion`).
+
+- **2026-08-24** — Re-declaring `intent.ts`'s private `logInfo`/`logWarn` dual-
+  shape-logger helpers locally (they aren't exported, and `intent.ts` is
+  read-only for every step of `specs/03-pr-why-risk-brief-plan.md`) must
+  narrow the type guard to the REAL `RunLogger` type
+  (`import type { RunLogger } from '../../platform/run-logger.js'`), not an
+  ad-hoc inline shape like `{ step: unknown; info: (...) => void }` — the
+  latter fails `tsc` with `TS2677: A type predicate's type must be
+  assignable to its parameter's type` because `IntentLog` is a union with
+  `RunLogger` (which has several more required members than just `step`/
+  `info`), so a narrower inline object type isn't assignable to it. Fix:
+  `function isRunLogger(log: IntentLog): log is RunLogger { return typeof
+  (log as RunLogger).step === 'function'; }` — the same signature
+  `intent.ts` itself uses; don't try to avoid the extra import by inlining a
+  duck-typed predicate. `server/src/modules/reviews/risk-brief.ts`.
 
 ## Tool & Library Notes
 

@@ -24,12 +24,14 @@ import type { FindingActionKind, FindingRecord, PrFile, SmartDiffRole } from "@d
 import { s } from "./styles";
 import { GROUP_ORDER } from "./constants";
 
-/** Scroll-to-line target for a click on a finding badge — same target/nonce
- *  pattern as `FindingsTab.tsx`, keyed by file path since multiple files
- *  across groups can each have their own findings. */
-interface ScrollTarget {
+/** Scroll-to-open target — a click on a finding badge (internal) or a
+ *  `review_focus[]` item on the Overview tab (external, via `DiffTab` ->
+ *  `PrDetailView`), same target/nonce pattern as `FindingsTab.tsx`, keyed by
+ *  file path since multiple files across groups can each have their own
+ *  target. `line` is optional: an external target may cite only a file. */
+export interface ScrollTarget {
   path: string;
-  line: number;
+  line?: number;
   n: number;
 }
 
@@ -41,6 +43,7 @@ export function SmartDiffViewer({
   repoProvider,
   repoHost,
   headSha,
+  externalTarget,
 }: {
   prId: string | null;
   /** Source of each file's `patch` text — SmartDiff's own file entries carry
@@ -52,6 +55,13 @@ export function SmartDiffViewer({
   repoProvider?: "github" | "gitlab";
   repoHost?: string;
   headSha?: string | null;
+  /** A `review_focus[]` click from `PrBriefCard` (Overview tab), forwarded
+   *  through `DiffTab`. Merged into this component's own `target` state
+   *  below — last-write-wins, whichever of an external target or an
+   *  internal finding-badge click set `target` most recently — so both
+   *  drive the same `FileCard.scrollToLine`/`scrollNonce` chain without the
+   *  finding-badge click flow changing at all. */
+  externalTarget?: ScrollTarget | null;
 }) {
   const t = useTranslations("smartDiff");
   const { data, isLoading, isError } = useSmartDiff(prId);
@@ -59,6 +69,15 @@ export function SmartDiffViewer({
   const action = useFindingAction();
   const [target, setTarget] = React.useState<ScrollTarget | null>(null);
   const [openFindingId, setOpenFindingId] = React.useState<string | null>(null);
+
+  // Adopt an incoming external target into the same `target` state a
+  // finding-badge click uses. `externalTarget` is only ever a fresh object
+  // when `PrDetailView` bumps its nonce (a new review_focus click, including
+  // a repeat click on the same item), so this fires exactly once per click,
+  // not on every unrelated re-render.
+  React.useEffect(() => {
+    if (externalTarget) setTarget(externalTarget);
+  }, [externalTarget]);
 
   const fileByPath = React.useMemo(() => new Map(files.map((f) => [f.path, f])), [files]);
 
@@ -179,10 +198,12 @@ function SmartDiffGroupSection({
           if (!patchFile) return null;
           const fileFindings = findingsByPath.get(f.path) ?? [];
           const hasFindings = fileFindings.length > 0;
-          // core/wiring always default open; boilerplate only when it has
-          // findings — findings must never stay hidden, even in boilerplate.
-          const defaultOpen = role !== "boilerplate" || hasFindings;
           const isTarget = target?.path === f.path;
+          // core/wiring always default open; boilerplate only when it has
+          // findings, or when it is the current scroll target — a
+          // review_focus click must always land on an expanded file, even a
+          // boilerplate one that would otherwise default to collapsed.
+          const defaultOpen = role !== "boilerplate" || hasFindings || isTarget;
           const openFinding = fileFindings.find((finding) => finding.id === openFindingId);
           return (
             <div key={f.path} style={s.fileRow}>
@@ -214,7 +235,15 @@ function SmartDiffGroupSection({
                   onAction={(act) => onFindingAction(openFinding.id, act)}
                 />
               )}
+              {/* FileCard's `open` state is a plain `useState` initialized
+                  once from `defaultOpen` — it does not react to `defaultOpen`
+                  changing on a later render. A `key` that changes exactly
+                  when this file becomes (or stops being) the scroll target
+                  forces a remount so a boilerplate/collapsed file actually
+                  re-opens when it's targeted, and so a repeat click on the
+                  same target (bumped nonce) re-triggers the scroll. */}
               <FileCard
+                key={isTarget ? `${f.path}::target-${target.n}` : f.path}
                 file={patchFile}
                 commenting={commenting}
                 defaultOpen={defaultOpen}

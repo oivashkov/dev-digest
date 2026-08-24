@@ -1,4 +1,4 @@
-import type { Finding, UnifiedDiff } from '@devdigest/shared';
+import type { Finding, ReviewFocusItem, Risk, RiskBriefExtraction, UnifiedDiff } from '@devdigest/shared';
 
 /**
  * Citation grounding — the mandatory mechanical gate for diff-findings.
@@ -87,4 +87,99 @@ export function groundFindings(findings: Finding[], diff: UnifiedDiff): Groundin
 export function groundingSummary(result: GroundingResult): string {
   const total = result.kept.length + result.dropped.length;
   return `${result.kept.length}/${total} passed`;
+}
+
+/**
+ * Citation grounding — the mandatory mechanical gate for the risk-brief call
+ * (`extractRiskBrief` in `./review/risk-brief.ts`).
+ *
+ * A `Risk` is kept only if every one of its `file_refs` is in the allowlisted
+ * file set. A `ReviewFocusItem` is kept only if its `file` is in the
+ * allowlisted file set AND, when it cites an `endpoint`, that endpoint is in
+ * the allowlisted endpoint set. Anything that fails is dropped whole
+ * (drop-not-reject, same semantics as `groundFindings` — the model
+ * "hallucinated" a location or endpoint). Never throws: a caller with an
+ * empty allowlist, or an extraction that cites nothing real, gets back
+ * `{ risks: [], review_focus: [] }` (AC13).
+ *
+ * Deliberately a separate function from `groundFindings` (different input
+ * shape, different citation kind) rather than a generic-ized merge — keeps
+ * `groundFindings`'s and `groundingSummary`'s existing signatures untouched,
+ * since `groundingSummary` already feeds run-trace stats consumed elsewhere.
+ */
+
+export interface RiskBriefAllowlist {
+  files: Set<string> | string[];
+  endpoints: Set<string> | string[];
+}
+
+export interface RiskBriefGroundingDrop {
+  kind: 'risk' | 'review_focus';
+  item: Risk | ReviewFocusItem;
+  reason: string;
+}
+
+export interface RiskBriefGroundingResult {
+  risks: Risk[];
+  review_focus: ReviewFocusItem[];
+  dropped: RiskBriefGroundingDrop[];
+}
+
+function toSet(value: Set<string> | string[]): Set<string> {
+  return value instanceof Set ? value : new Set(value);
+}
+
+/** Apply the grounding gate to a risk-brief extraction against an allowlist. */
+export function groundRiskBrief(
+  extraction: RiskBriefExtraction,
+  allowlist: RiskBriefAllowlist,
+): RiskBriefGroundingResult {
+  const files = toSet(allowlist.files);
+  const endpoints = toSet(allowlist.endpoints);
+
+  const risks: Risk[] = [];
+  const review_focus: ReviewFocusItem[] = [];
+  const dropped: RiskBriefGroundingDrop[] = [];
+
+  for (const risk of extraction.risks) {
+    const badRef = risk.file_refs.find((f) => !files.has(f));
+    if (badRef !== undefined) {
+      dropped.push({
+        kind: 'risk',
+        item: risk,
+        reason: `file_refs entry '${badRef}' is not a changed file in this PR`,
+      });
+      continue;
+    }
+    risks.push(risk);
+  }
+
+  for (const item of extraction.review_focus) {
+    if (!files.has(item.file)) {
+      dropped.push({
+        kind: 'review_focus',
+        item,
+        reason: `file '${item.file}' is not a changed file in this PR`,
+      });
+      continue;
+    }
+    if (item.endpoint != null && !endpoints.has(item.endpoint)) {
+      dropped.push({
+        kind: 'review_focus',
+        item,
+        reason: `endpoint '${item.endpoint}' is not an impacted endpoint/cron for this PR`,
+      });
+      continue;
+    }
+    review_focus.push(item);
+  }
+
+  return { risks, review_focus, dropped };
+}
+
+/** Human-readable summary, e.g. "3/4 passed" for `groundRiskBrief`'s result. */
+export function riskBriefGroundingSummary(result: RiskBriefGroundingResult): string {
+  const kept = result.risks.length + result.review_focus.length;
+  const total = kept + result.dropped.length;
+  return `${kept}/${total} passed`;
 }
