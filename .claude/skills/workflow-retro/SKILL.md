@@ -2,7 +2,7 @@
 name: workflow-retro
 description: >-
   Manually-invoked retro over a multi-agent workflow that already ran in this
-  conversation (a specreator session, a /run-plan execution, or any sequence
+  conversation (a spec-creator session, a /run-plan execution, or any sequence
   of Agent/subagent calls) — never auto-triggered. Reconstructs the
   agent-invocation timeline and order, approximates token cost per agent and
   for the orchestrating thread, counts human-in-the-loop cost
@@ -146,7 +146,7 @@ repo's agents already structure them, so extract rather than infer:
   vaguer than what the agent actually said.
 - Anything the agent explicitly flagged as **not performed**, and why.
 - Whether the agent needed a clarifying round with the user before starting
-  (e.g. `specreator` §0, `implementation-planner`'s mode confirmation) vs.
+  (e.g. `spec-creator` §0, `implementation-planner`'s mode confirmation) vs.
   proceeded straight through. A session with **zero** clarifying rounds on
   a genuinely ambiguous ask is worth flagging too — the failure mode runs
   in both directions, not just "too many questions".

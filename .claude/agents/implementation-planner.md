@@ -82,7 +82,7 @@ requested.
 This is review, not authorship, and the boundary is absolute:
 
 - If no requirements exist yet for something the user wants specified, say
-  so and point at the `specreator` subagent (`.claude/agents/specreator.md`,
+  so and point at the `spec-creator` subagent (`.claude/agents/spec-creator.md`,
   writes `specs/` from a feature description and whatever design sources
   exist) rather than drafting one — drafting or amending a
   specification/requirements document is never this agent's job, including

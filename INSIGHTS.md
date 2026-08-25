@@ -16,6 +16,26 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-25 — Renamed the `specreator` subagent to `spec-creator`
+
+**What:** `.claude/agents/specreator.md` → `.claude/agents/spec-creator.md`
+(`git mv`, frontmatter `name:` updated to match), plus every current-state
+reference across `.claude/agents/README.md`, `.claude/agents/diagrams.md`,
+`.claude/agents/implementation-planner.md`, `.claude/skills/run-plan/`,
+`.claude/skills/workflow-retro/`, every `<module>/specs/README.md` +
+`e2e/docs/README.md`, and `specs/03-pr-why-risk-brief{,-plan}.md`'s two
+passing tool-name mentions. Hyphenation only — tools, model, scope, and
+behavior are unchanged.
+**Why:** user-requested naming-convention fix, 2026-08-25 — every other
+multi-word agent in this repo is kebab-case
+(`implementation-planner`, `architecture-reviewer`, `plan-verifier`,
+`doc-writer`, `test-writer`); `specreator` was the one holdover without a
+hyphen.
+**Note:** the entry directly below (2026-08-23) is left as-written — it
+records the agent's introduction under its original name and is a historical
+decision record, not a live reference; do not "fix" its wording to match the
+new name.
+
 ### 2026-08-23 — Added `specreator`, a dedicated spec-authoring subagent; reverses the same day's "human/`doc-writer`-driven only" decision below
 
 **What:** New `.claude/agents/specreator.md` (`Read`, `Write`, `Edit`, `Grep`,

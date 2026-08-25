@@ -703,4 +703,4 @@ is now factually wrong relative to where `PrBriefCard` will actually render
 (the Overview tab, above `IntentCard`; `VerdictBanner` lives on the Findings
 tab inside `ReviewRunAccordion` and is untouched). This plan documents and
 applies the correction (§2, ambiguity 1); the spec itself is unchanged —
-amending it is `specreator`'s job, not this plan's.
+amending it is `spec-creator`'s job, not this plan's.

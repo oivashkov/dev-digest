@@ -2,7 +2,7 @@
 
 ## Motivation
 
-This repo already runs several multi-agent workflows — a `specreator`
+This repo already runs several multi-agent workflows — a `spec-creator`
 session with a round of `AskUserQuestion` clarifications, a `/run-plan`
 execution spanning `implementer` → `architecture-reviewer` ‖
 `plan-verifier` → a bounded fix loop, or any ad hoc chain of `Agent` calls.
@@ -14,7 +14,7 @@ skipped, or duplicated. That gap is what `/workflow-retro` closes — a
 retro over the *process*, distinct from `architecture-reviewer` /
 `plan-verifier` / `pr-self-review`, which all judge the *artifact*.
 
-Concrete case that motivated writing it: the `specreator` session that
+Concrete case that motivated writing it: the `spec-creator` session that
 produced `specs/01-project-context.md` — one `opus` agent, ~152k
 subagent tokens, four rounds of `AskUserQuestion` (11 questions total,
 about half accepted the recommended option, several needed a follow-up

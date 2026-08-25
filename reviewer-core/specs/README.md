@@ -2,7 +2,7 @@
 
 One file per engine change: `NN-feature-name.md`.
 
-Authored by the `specreator` subagent (`.claude/agents/specreator.md`) or
+Authored by the `spec-creator` subagent (`.claude/agents/spec-creator.md`) or
 directly by hand. Uses the repo-wide template — see the root
 `../../specs/README.md` for the full shape, the EARS acceptance-criteria
 convention, and the `Status`/`Supersedes` lifecycle:

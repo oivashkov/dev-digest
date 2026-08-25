@@ -338,7 +338,7 @@ single LLM call items 9-10 describe.)*
   of an in-blob field.
 
 **Cross-module flow** (client → server → reviewer-core → grounding →
-persistence — 5 hops, diagrammed per this repo's `specreator` convention):
+persistence — 5 hops, diagrammed per this repo's `spec-creator` convention):
 
 ```mermaid
 sequenceDiagram

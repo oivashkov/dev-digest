@@ -13,7 +13,7 @@ description: >-
   each round. Ends with a report and a pointer to `pr-self-review` — never
   pushes. Use for "/run-plan", "run the plan", "execute <path>/plan.md", or
   any request to carry out a plan file that already exists. Does NOT invoke
-  `specreator`, `implementation-planner` (run those manually first — this
+  `spec-creator`, `implementation-planner` (run those manually first — this
   skill only consumes their output), or `test-writer` (skipped by policy to
   save cost; run it manually afterward for coverage).
 version: 0.2.0
@@ -45,14 +45,14 @@ and never decides what the feature should do.
   report for the user, not into round N+1.
 
 If the request only carries a feature description, a prompt, or design
-sources and no plan file — stop and say this needs `specreator` +
+sources and no plan file — stop and say this needs `spec-creator` +
 `implementation-planner` first; do not attempt to invent a plan yourself.
 
 ## Not this skill's job
 
 | Stage | Run here? | Why |
 |---|---|---|
-| `specreator` (write spec) | **No** | Manual, separate, before a plan exists. |
+| `spec-creator` (write spec) | **No** | Manual, separate, before a plan exists. |
 | `implementation-planner` (write plan) | **No** | Manual, separate — this skill only consumes its output, never produces it. |
 | `implementer` | Yes | The code-writing stage. |
 | `architecture-reviewer` | Yes | Every round: initial + each fix round. |
@@ -189,7 +189,7 @@ Synthesize — do not paste each subagent's full report verbatim:
 ## Explicitly NOT performed
 - **test-writer** — skipped by this skill's cost policy. Run it manually
   before merging if coverage is required.
-- **specreator / implementation-planner** — out of scope; this skill only
+- **spec-creator / implementation-planner** — out of scope; this skill only
   consumed an existing plan.
 - **doc-writer** — not run.
 - **No commit, push, or PR.**
@@ -209,7 +209,7 @@ This skill must NOT:
 
 - Invent or amend a Development Plan — it consumes one, verbatim, and stops
   if none is given.
-- Invoke `specreator`, `implementation-planner`, `test-writer`, or
+- Invoke `spec-creator`, `implementation-planner`, `test-writer`, or
   `doc-writer`.
 - Auto-route a Warning/Suggestion finding, or any `plan-verifier`
   Missing/Partial item, into the fix loop — Critical from

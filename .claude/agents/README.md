@@ -1,7 +1,7 @@
 # Agents
 
 Підагенти цього репозиторію, що викликаються через `Agent`
-(`subagent_type: specreator | researcher | implementation-planner |
+(`subagent_type: spec-creator | researcher | implementation-planner |
 implementer | test-writer | architecture-reviewer | plan-verifier |
 doc-writer`). Це карта набору — за повним текстом правил дивись сам файл
 агента (`<name>.md`), сюди він не дублюється.
@@ -12,18 +12,18 @@ doc-writer`). Це карта набору — за повним текстом 
 `architecture-reviewer` ‖ `plan-verifier` паралельно → фікс-цикл (лише
 Critical від `architecture-reviewer`, до `max-fix` раундів, `plan-verifier`
 перезапускається щораунду для видимості, але фікс не тригерить) → звіт, без
-`specreator`/`implementation-planner`/`test-writer`. Він свідомо вужчий за
+`spec-creator`/`implementation-planner`/`test-writer`. Він свідомо вужчий за
 повний конвеєр нижче — деталі й обґрунтування рішень у
 [`../skills/run-plan/README.md`](../skills/run-plan/README.md).
 
-Типовий конвеєр починається на вимогах, не на плані: **specreator** аналізує
+Типовий конвеєр починається на вимогах, не на плані: **spec-creator** аналізує
 джерела дизайну (скріншоти, текстовий опис, посилання — лише як нотатка,
 існуючий код) і перетворює фічу на специфікацію в `specs/` за фіксованим
 EARS-шаблоном, ставлячи всі знайдені прогалини (edge cases, міжмодульні
 контракти, UX) користувачу як питання чи пропозицію, а не вирішуючи їх
 мовчки → **researcher** знімає окремі невідомості → **implementation-planner**
 рецензує наявні вимоги (спершу читає `<module>/specs/`, куди й пише
-`specreator`; уточнює, якщо щось незрозуміло, і пропонує власні
+`spec-creator`; уточнює, якщо щось незрозуміло, і пропонує власні
 рекомендації — але сам специфікацію ніколи не пише), питає, чи потрібен
 мультиагентний режим чи один послідовний прохід, і перетворює задачу на
 Development Plan із кроками й Owned paths (непересічними — у мультиагентному
@@ -45,7 +45,7 @@ single-agent режимі). Після реалізації **plan-verifier** з
 задарма); **doc-writer** перетворює готовий
 план або реалізовану фічу на документацію в `docs/`/`specs/` з
 Mermaid-діаграмами за потреби (специфікації "що будувати" лишаються за
-`specreator` — `doc-writer` документує вже реалізоване). Після
+`spec-creator` — `doc-writer` документує вже реалізоване). Після
 `test-writer`/`architecture-reviewer` **plan-verifier** запускається вдруге,
 фінальним ґейтом — підтверджує, що пункти плану про тести тепер закриті і
 нічого не зламалось; жодне з двох звернень до нього не підмінює
@@ -62,7 +62,7 @@ Type кроку → преднавантажені скіли — у [diagrams.m
 
 | Агент | Модель | Дозволи (tools) | Відповідальність |
 |---|---|---|---|
-| [specreator](specreator.md) | opus | `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash`, `Skill` (Write/Edit — лише `specs/` кореня й модулів + виняток `e2e/docs/`) | Аналізує джерела дизайну (скріншоти, текст, код; посилання лише як нотатка) і пише специфікацію фічі за фіксованим EARS-шаблоном; кожну знайдену прогалину ставить користувачу як питання чи пропозицію, ніколи не вирішує мовчки |
+| [spec-creator](spec-creator.md) | opus | `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash`, `Skill` (Write/Edit — лише `specs/` кореня й модулів + виняток `e2e/docs/`) | Аналізує джерела дизайну (скріншоти, текст, код; посилання лише як нотатка) і пише специфікацію фічі за фіксованим EARS-шаблоном; кожну знайдену прогалину ставить користувачу як питання чи пропозицію, ніколи не вирішує мовчки |
 | [researcher](researcher.md) | sonnet | `Read`, `Grep`, `Glob`, `Bash` (тільки read-only), `WebFetch`, `WebSearch` | Відповідає на конкретне питання доказами з коду репозиторію та/або зовнішніх джерел |
 | [implementation-planner](implementation-planner.md) | opus | `Read`, `Grep`, `Glob`, `Bash` (тільки read-only) | Перевіряє реквайременти, уточнює неясне, дає рекомендації, питає single-agent vs мультиагентний режим і перетворює запит на Development Plan із кроками, Owned paths і архітектурними обмеженнями — код і специфікації не пише |
 | [implementer](implementer.md) | sonnet | `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash`, `Skill` | Виконує рівно один крок плану в межах його Owned paths: пише код, ганяє тести, самоперевіряє |
@@ -75,21 +75,21 @@ Type кроку → преднавантажені скіли — у [diagrams.m
 `implementation-planner`, `architecture-reviewer` і `plan-verifier` не мають
 `Write`/`Edit` — нічого не змінюють у файловій системі (`architecture-reviewer`
 і `plan-verifier` read-only навіть без `Skill` — цитують скіли за назвою, як і
-`implementation-planner`). `specreator`, `test-writer` і `doc-writer` мають
+`implementation-planner`). `spec-creator`, `test-writer` і `doc-writer` мають
 `Write`/`Edit`, але їхній обсяг запису обмежено лише промптом (у Claude Code
-немає механізму видати `Write` лише на глоб шляху): `specreator` — тільки
+немає механізму видати `Write` лише на глоб шляху): `spec-creator` — тільки
 `specs/` (кореневі й модульні) плюс виняток `e2e/docs/` (бо `e2e/specs/`
 зайнятий виконуваними `*.flow.json`), `test-writer` — тільки тестові файли й
 фікстури (`*.test.ts`, `*.test.tsx`, `*.it.test.ts`, `e2e/specs/*.flow.json`),
 `doc-writer` — тільки `docs/` і `specs/` (кореневі й модульні), ніколи
 `src/`. Усі три мають спільний виняток поза власним обсягом:
 `<module>/INSIGHTS.md` через скіл `engineering-insights`, як і решта агентів,
-що його преднавантажують. `implementer`, `specreator`, `test-writer` і
+що його преднавантажують. `implementer`, `spec-creator`, `test-writer` і
 `doc-writer` не мають `WebFetch`/`WebSearch` — зовнішні невідомості (включно з
-Figma-посиланнями в `specreator`) мідтаск звітують як заблоковане відхилення
+Figma-посиланнями в `spec-creator`) мідтаск звітують як заблоковане відхилення
 чи "Open questions", а не досліджують самі.
 
-## specreator
+## spec-creator
 
 - **Відповідальність:** аналізує джерела дизайну (скріншоти, вставлені в
   розмову, текстовий опис, посилання — лише як нотатка без фактичного
@@ -118,7 +118,7 @@ Figma-посиланнями в `specreator`) мідтаск звітують я
   уточнювальні запитання одним раундом.
 - **Вихід:** новий/оновлений файл(и) у `specs/` (або `e2e/docs/`) + Specreator
   Report (markdown-текст фінальної відповіді, за фіксованим форматом §10 у
-  `specreator.md`) — Scope, Context reviewed, Design sources reviewed, Gaps
+  `spec-creator.md`) — Scope, Context reviewed, Design sources reviewed, Gaps
   found and how resolved, Files written or updated, Diagrams added,
   Self-verification, Open questions carried into the spec, Insights
   recorded, Explicitly NOT performed. Перед звітом — обов'язковий крок

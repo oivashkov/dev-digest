@@ -1,5 +1,5 @@
 ---
-name: specreator
+name: spec-creator
 description: >-
   Writes Spec-Driven-Development specifications under a `specs/` folder --
   root `specs/` for a feature spanning >=2 packages, `<module>/specs/` for a
