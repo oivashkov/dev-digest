@@ -15,12 +15,23 @@
 export {
   assemblePrompt,
   wrapUntrusted,
+  INJECTION_GUARD,
   type PromptParts,
   type AssembledPrompt,
 } from './prompt.js';
 
 // Citation grounding — the mandatory mechanical gate for diff findings.
 export { groundFindings, groundingSummary, type GroundingResult } from './grounding.js';
+
+// Citation grounding — the mandatory mechanical gate for the risk-brief call's
+// risks[]/review_focus[] (file/endpoint citations, not diff-line citations).
+export {
+  groundRiskBrief,
+  riskBriefGroundingSummary,
+  type RiskBriefAllowlist,
+  type RiskBriefGroundingDrop,
+  type RiskBriefGroundingResult,
+} from './grounding.js';
 
 // Structured-output helpers (Zod → JSON Schema + parse-with-repair).
 export {
@@ -57,6 +68,21 @@ export {
   type IntentTicketInput,
   type PlanExcerptInput,
 } from './review/intent.js';
+
+// Risk-brief extraction: given (title + resolved description/intent/blast-
+// summary/diff-stat/ticket/plan excerpts + LLM) → { what, why, risks,
+// review_focus } — no risk_level (the caller computes that deterministically
+// from the post-grounding risks, never self-reported).
+export {
+  extractRiskBrief,
+  buildRiskBriefMessages,
+  DEFAULT_RISK_BRIEF_MAX_RETRIES,
+  type RiskBriefExtractionInput,
+  type RiskBriefExtractionOutcome,
+  type RiskBriefPromptInput,
+  type RiskBriefTicketInput,
+  type RiskBriefPlanExcerptInput,
+} from './review/risk-brief.js';
 
 // Output: grounded Review → GitHubReviewPayload (body + inline comments + event).
 export {

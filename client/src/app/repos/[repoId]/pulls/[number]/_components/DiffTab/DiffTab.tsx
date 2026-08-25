@@ -5,6 +5,10 @@ import { useTranslations } from "next-intl";
 import { SectionLabel, Button } from "@devdigest/ui";
 import { DiffViewer, type DiffCommentApi } from "@/components/diff-viewer";
 import { SmartDiffViewer } from "../SmartDiffViewer";
+// `index.ts`'s barrel only exports the component, not this type (out of this
+// step's Owned paths) — import the type straight from the source file, the
+// same barrel-bypass pattern `FindingsTab.tsx` already uses for `RunHistory`.
+import type { ScrollTarget } from "../SmartDiffViewer/SmartDiffViewer";
 import { usePrComments, useCreatePrComment } from "@/lib/hooks/reviews";
 import { notify } from "@/lib/toast";
 import type { PrFile } from "@devdigest/shared";
@@ -22,6 +26,12 @@ interface DiffTabProps {
   repoProvider?: "github" | "gitlab";
   repoHost?: string;
   headSha?: string | null;
+  /** Set by `PrDetailView` when a `review_focus[]` item is clicked on the
+   *  Overview tab. Forces `order` to `"smart"` — the `"original"` order
+   *  renders plain `DiffViewer`, which has no scroll props at all, so a jump
+   *  would silently no-op there — and forwards the target to
+   *  `SmartDiffViewer`. */
+  focusTarget?: ScrollTarget | null;
 }
 
 type DiffOrder = "smart" | "original";
@@ -35,6 +45,7 @@ export function DiffTab({
   repoProvider,
   repoHost,
   headSha,
+  focusTarget,
 }: DiffTabProps) {
   const t = useTranslations("smartDiff");
   const { data: comments } = usePrComments(prId);
@@ -44,6 +55,10 @@ export function DiffTab({
   // Smart order is the default; SmartDiffViewer itself falls back to plain
   // Original order while loading/on error (graceful, per the plan).
   const [order, setOrder] = React.useState<DiffOrder>("smart");
+  // A pending focus target always wins over the user's own toggle — the
+  // "original" order has no scroll props (see DiffViewer.tsx), so it cannot
+  // honor a jump at all. Derived, not stored: no effect needed.
+  const effectiveOrder: DiffOrder = focusTarget ? "smart" : order;
 
   const commentCount = comments?.length ?? 0;
 
@@ -74,7 +89,7 @@ export function DiffTab({
               <Button
                 kind="tertiary"
                 size="sm"
-                active={order === "smart"}
+                active={effectiveOrder === "smart"}
                 onClick={() => setOrder("smart")}
               >
                 {t("toggle.smart")}
@@ -82,7 +97,7 @@ export function DiffTab({
               <Button
                 kind="tertiary"
                 size="sm"
-                active={order === "original"}
+                active={effectiveOrder === "original"}
                 onClick={() => setOrder("original")}
               >
                 {t("toggle.original")}
@@ -103,7 +118,7 @@ export function DiffTab({
       >
         Files changed · {filesCount} files
       </SectionLabel>
-      {order === "smart" ? (
+      {effectiveOrder === "smart" ? (
         <SmartDiffViewer
           prId={prId}
           files={files}
@@ -112,6 +127,7 @@ export function DiffTab({
           repoProvider={repoProvider}
           repoHost={repoHost}
           headSha={headSha}
+          externalTarget={focusTarget}
         />
       ) : (
         <DiffViewer files={files} commenting={commenting} />

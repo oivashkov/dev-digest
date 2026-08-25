@@ -8,6 +8,7 @@ import { Tabs } from "@devdigest/ui";
 import type { Agent } from "@devdigest/shared";
 import { ConfigTab } from "./_components/ConfigTab";
 import { SkillsTab } from "./_components/SkillsTab";
+import { ContextTab } from "./_components/ContextTab";
 import { TABS } from "./constants";
 import { s } from "./styles";
 
@@ -23,7 +24,13 @@ export function AgentEditor({ agent, tab, onTab }: { agent: Agent; tab: string; 
         {/* key={agent.id} remounts (not just re-renders) the active tab when
             the agent changes, so its useState(agent.*) fields re-initialize
             from props for free — no manual resync effect needed. */}
-        {tab === "skills" ? <SkillsTab agent={agent} key={agent.id} /> : <ConfigTab agent={agent} key={agent.id} />}
+        {tab === "skills" ? (
+          <SkillsTab agent={agent} key={agent.id} />
+        ) : tab === "context" ? (
+          <ContextTab agent={agent} key={agent.id} />
+        ) : (
+          <ConfigTab agent={agent} key={agent.id} />
+        )}
       </div>
     </div>
   );

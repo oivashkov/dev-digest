@@ -57,6 +57,19 @@ export const PromptAssembly = z.object({
 });
 export type PromptAssembly = z.infer<typeof PromptAssembly>;
 
+/** One project-context document actually injected into a run's prompt —
+ *  replaces the old bare `string` element (path only). `tokens` is the
+ *  server-computed estimate at READ time (may differ from the editor's
+ *  stored estimate — text is always read fresh, never cached; see
+ *  `specs/01-project-context.md`'s edge-case table). `truncated` marks a
+ *  document that hit the per-document character cap (Q8). */
+export const SpecRead = z.object({
+  path: z.string(),
+  tokens: z.number().int(),
+  truncated: z.boolean().default(false),
+});
+export type SpecRead = z.infer<typeof SpecRead>;
+
 export const MemoryPulled = z.object({
   pr: z.number().int().nullish(),
   text: z.string(),
@@ -93,7 +106,7 @@ export const RunTrace = z.object({
   tool_calls: z.array(ToolCall),
   raw_output: z.string(),
   memory_pulled: z.array(MemoryPulled),
-  specs_read: z.array(z.string()),
+  specs_read: z.array(SpecRead),
   log: z.array(RunLogLine),
 });
 export type RunTrace = z.infer<typeof RunTrace>;

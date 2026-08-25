@@ -2,6 +2,7 @@
 
 import React from "react";
 import { SectionLabel } from "@devdigest/ui";
+import { PrBriefCard } from "../PrBriefCard";
 import { IntentCard } from "../IntentCard";
 import { BlastRadiusCard } from "../BlastRadiusCard";
 import { s } from "./styles";
@@ -13,6 +14,7 @@ interface OverviewTabProps {
   repoProvider?: "github" | "gitlab";
   repoHost?: string;
   headSha?: string | null;
+  onOpenFile?: (file: string, line?: number) => void;
 }
 
 export function OverviewTab({
@@ -22,9 +24,11 @@ export function OverviewTab({
   repoProvider,
   repoHost,
   headSha,
+  onOpenFile,
 }: OverviewTabProps) {
   return (
     <div style={s.wrap}>
+      <PrBriefCard prId={prId} headSha={headSha} onOpenFile={onOpenFile} />
       {prBody && (
         <section>
           <SectionLabel icon="MessageSquare">Description</SectionLabel>

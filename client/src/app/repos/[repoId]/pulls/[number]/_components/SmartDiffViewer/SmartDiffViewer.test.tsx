@@ -16,7 +16,7 @@ vi.mock("@/lib/hooks/reviews", () => ({
   useFindingAction: (...args: unknown[]) => useFindingActionMock(...args),
 }));
 
-import { SmartDiffViewer } from "./SmartDiffViewer";
+import { SmartDiffViewer, type ScrollTarget } from "./SmartDiffViewer";
 
 afterEach(() => {
   cleanup();
@@ -90,13 +90,13 @@ function finding(overrides: Partial<FindingRecord> = {}): FindingRecord {
   };
 }
 
-function renderViewer(files: PrFile[] = FILES) {
+function renderViewer(files: PrFile[] = FILES, externalTarget?: ScrollTarget | null) {
   return render(
     <NextIntlClientProvider
       locale="en"
       messages={{ smartDiff: smartDiffMessages, shell: shellMessages, prReview: prReviewMessages }}
     >
-      <SmartDiffViewer prId="pr-1" files={files} />
+      <SmartDiffViewer prId="pr-1" files={files} externalTarget={externalTarget} />
     </NextIntlClientProvider>,
   );
 }
@@ -251,5 +251,71 @@ describe("SmartDiffViewer", () => {
     expect(
       screen.queryByRole("button", { name: "Show finding: SQL injection via string concatenation" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("opens and scrolls to an externally-supplied target (a review_focus click) even on a boilerplate file with no findings of its own, without breaking finding-badge clicks", () => {
+    useSmartDiffMock.mockReturnValue({ data: SMART_DIFF, isLoading: false, isError: false });
+    usePrReviewsMock.mockReturnValue({ data: [{ findings: [finding()] }] });
+    useFindingActionMock.mockReturnValue(NO_ACTION);
+
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    // package-lock.json is in the "boilerplate" group with no findings of its
+    // own, so it would default to collapsed — a review_focus target must
+    // still force it open.
+    renderViewer(FILES, { path: "package-lock.json", line: 1, n: 1 });
+
+    expect(scrollIntoView).toHaveBeenCalled();
+    expect(screen.getByText("boilerplate change")).toBeInTheDocument();
+
+    // The pre-existing finding-badge click flow still works unchanged
+    // alongside an active external target.
+    const badge = screen.getByRole("button", {
+      name: "Show finding: SQL injection via string concatenation",
+    });
+    fireEvent.click(badge);
+    expect(
+      screen.getByText("User input is concatenated directly into the query."),
+    ).toBeInTheDocument();
+  });
+
+  it("re-triggers the scroll when the external target's nonce is bumped for the same file", () => {
+    useSmartDiffMock.mockReturnValue({ data: SMART_DIFF, isLoading: false, isError: false });
+    usePrReviewsMock.mockReturnValue(NO_REVIEWS);
+    useFindingActionMock.mockReturnValue(NO_ACTION);
+
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    const { rerender } = render(
+      <NextIntlClientProvider
+        locale="en"
+        messages={{ smartDiff: smartDiffMessages, shell: shellMessages, prReview: prReviewMessages }}
+      >
+        <SmartDiffViewer
+          prId="pr-1"
+          files={FILES}
+          externalTarget={{ path: "src/index.ts", line: 5, n: 1 }}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    // Same file/line, bumped nonce — a repeat click on the same review_focus
+    // item must still re-scroll.
+    rerender(
+      <NextIntlClientProvider
+        locale="en"
+        messages={{ smartDiff: smartDiffMessages, shell: shellMessages, prReview: prReviewMessages }}
+      >
+        <SmartDiffViewer
+          prId="pr-1"
+          files={FILES}
+          externalTarget={{ path: "src/index.ts", line: 5, n: 2 }}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
   });
 });

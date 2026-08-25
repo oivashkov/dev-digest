@@ -9,12 +9,17 @@ import {
   SmartDiff,
   Conformance,
   Onboarding,
+  OnboardingState,
+  OnboardingGenerateAccepted,
   EvalRun,
   MemoryItem,
   RunTrace,
   Settings,
   Repo,
   PrDetail,
+  SpecPath,
+  SetContextDocsBody,
+  AgentVersionConfig,
 } from '@devdigest/shared';
 
 /**
@@ -154,6 +159,25 @@ describe('AI contracts parse fixtures', () => {
     ).not.toThrow();
   });
 
+  it('OnboardingSection rejects an out-of-enum kind; OnboardingState round-trips a null tour', () => {
+    expect(() =>
+      Onboarding.parse({
+        sections: [{ kind: 'routes_and_apis', title: 'T', body: 'b', links: [] }],
+      }),
+    ).toThrow();
+    expect(() =>
+      OnboardingState.parse({
+        tour: null,
+        status: 'empty',
+        generated_at: null,
+        files_indexed: 0,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      OnboardingGenerateAccepted.parse({ status: 'accepted', job_id: 'j1' }),
+    ).not.toThrow();
+  });
+
   it('RunTrace (data2.jsx TRACE single-document)', () => {
     const trace = RunTrace.parse({
       config: { agent: 'Security Reviewer', version: 'v7', model: 'gpt-4.1', pr: 482, source: 'local' },
@@ -169,7 +193,7 @@ describe('AI contracts parse fixtures', () => {
       tool_calls: [{ tool: 'read_file', args: "'src/config.ts'", meta: '1,240 bytes', ms: 120 }],
       raw_output: '{}',
       memory_pulled: [{ pr: 288, text: 'verified via stripe-signature' }],
-      specs_read: ['specs/security-baseline.md'],
+      specs_read: [{ path: 'specs/security-baseline.md', tokens: 420 }],
       log: [{ t: '00.00', kind: 'info', msg: 'started' }],
     });
     expect(trace.tool_calls).toHaveLength(1);
@@ -216,5 +240,56 @@ describe('platform DTOs', () => {
         commits: [],
       }),
     ).not.toThrow();
+  });
+});
+
+describe('Project Context contracts', () => {
+  it('SpecPath accepts the allowed shapes', () => {
+    expect(() => SpecPath.parse('specs/01-project-context.md')).not.toThrow();
+    expect(() => SpecPath.parse('docs/agent-prompts/foo.md')).not.toThrow();
+    expect(() => SpecPath.parse('INSIGHTS.md')).not.toThrow();
+    expect(() => SpecPath.parse('server/INSIGHTS.md')).not.toThrow();
+  });
+
+  it('SpecPath rejects a traversal payload', () => {
+    expect(() => SpecPath.parse('../etc/passwd')).toThrow();
+    expect(() => SpecPath.parse('specs/../../etc/passwd')).toThrow();
+  });
+
+  it('SpecPath rejects an absolute path', () => {
+    expect(() => SpecPath.parse('/etc/passwd')).toThrow();
+  });
+
+  it('SpecPath rejects a Windows drive-absolute path', () => {
+    expect(() => SpecPath.parse('C:\\Windows\\system.ini')).toThrow();
+  });
+
+  it('SpecPath rejects a non-.md path', () => {
+    expect(() => SpecPath.parse('specs/notes.txt')).toThrow();
+  });
+
+  it('SetContextDocsBody rejects an over-cap array', () => {
+    const paths = Array.from({ length: 11 }, (_, i) => `specs/doc-${i}.md`);
+    expect(() => SetContextDocsBody.parse({ repo_id: '11111111-1111-1111-1111-111111111111', paths })).toThrow();
+  });
+
+  it('SetContextDocsBody accepts an at-cap array', () => {
+    const paths = Array.from({ length: 10 }, (_, i) => `specs/doc-${i}.md`);
+    expect(() =>
+      SetContextDocsBody.parse({ repo_id: '11111111-1111-1111-1111-111111111111', paths }),
+    ).not.toThrow();
+  });
+
+  it('a legacy AgentVersionConfig literal without context_docs still parses', () => {
+    const legacy = AgentVersionConfig.parse({
+      provider: 'openai',
+      model: 'gpt-4.1',
+      system_prompt: 'You are a reviewer.',
+      strategy: 'single-pass',
+      ci_fail_on: 'critical',
+      repo_intel: true,
+      skills: ['skill-1'],
+    });
+    expect(legacy.context_docs).toEqual([]);
   });
 });

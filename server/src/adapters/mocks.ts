@@ -371,6 +371,12 @@ export interface MockGitOptions {
   head?: string;
   /** Head `currentHead()` returns AFTER `sync()` runs — simulates fetch+reset advancing HEAD. */
   syncedHead?: string;
+  /** Paths `readFile` should THROW for (simulates a deleted/unreadable file) —
+   *  distinct from a path simply absent from `files`, which resolves to `''`
+   *  (a successful read of empty content), not a failure. Used by
+   *  `test/context-prompt-wiring.it.test.ts` (SPEC-01) to exercise the
+   *  attached-then-deleted read-failure path. */
+  readFileThrows?: string[];
 }
 
 export class MockGitClient implements GitClient {
@@ -413,6 +419,9 @@ export class MockGitClient implements GitClient {
     return [{ sha: 'a1b2c3d4', message: 'init', author: 'marisa.koch', date: '2026-06-01' }];
   }
   async readFile(_repo: RepoRef, path: string): Promise<string> {
+    if (this.opts.readFileThrows?.includes(path)) {
+      throw new Error(`Mock read failure: ${path}`);
+    }
     return this.opts.files?.[path] ?? '';
   }
 }

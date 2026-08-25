@@ -9,6 +9,7 @@ import { REVIEW_STRATEGY } from './constants.js';
 import { taskLine } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
 import { getOrComputeIntent } from './intent.js';
+import { buildProjectContextDocs } from './project-context.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
 export class RunCancelledError extends Error {
@@ -208,6 +209,18 @@ export class ReviewRunExecutor {
         runLog.info(`Attaching ${skillBodies.length} skill(s) to the prompt`);
       }
 
+      // Project Context — this agent's attached documents for THIS run's repo
+      // (agent-level union enabled-skill-inherited, Q2/Q3), read fresh from
+      // the clone. Independent of the repo-intel toggle above. Same
+      // degrade-to-empty contract as every other enrichment here.
+      const projectContext = await buildProjectContextDocs(
+        this.container,
+        agent,
+        repo,
+        skillLinks,
+        runLog,
+      );
+
       const task = taskLine(pull) + rankNote;
 
       // ---- Engine: assemble → single-pass → grounding -----------------------
@@ -235,6 +248,9 @@ export class ReviewRunExecutor {
         // Intent Layer — derived PR intent/scope, same omit-when-empty
         // contract. Computed once per batch above (this.container).
         ...(intent ? { intent: intent.intent } : {}),
+        // Project Context — attached documents, same omit-when-empty
+        // contract. Zero attachments ⇒ prompt is byte-identical to today's.
+        ...(projectContext.specs.length > 0 ? { specs: projectContext.specs } : {}),
         task,
         sessionId: `${repo.owner}/${repo.name}#${pull.number}:${agent.name}`,
         onEvent: (e) => runLog.event(e.kind, e.msg, e.data),
@@ -314,7 +330,7 @@ export class ReviewRunExecutor {
         })),
         raw_output: outcome.raw,
         memory_pulled: [],
-        specs_read: [],
+        specs_read: projectContext.specsRead,
         // Persisted log = the run's FULL event buffer (incl. shared pre-work:
         // diff load + intent), not just events recorded inside this method.
         log: runLog.logFor(runId),

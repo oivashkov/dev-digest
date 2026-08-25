@@ -15,7 +15,10 @@ multi-agent, CI, and dashboard screens.)
   (`@devdigest/ui`) and shared Zod contracts under `src/vendor/shared`
   (`@devdigest/shared`).
 - **API base:** `NEXT_PUBLIC_API_BASE` (default `http://localhost:3001`), used by
-  `src/lib/api.ts`. Every data hook lives in `src/lib/hooks/*`.
+  `src/lib/api.ts`. Every data hook lives in `src/lib/hooks/*` — e.g.
+  `usePrIntent`/`useRefreshPrIntent` and `usePrBrief`/`useRefreshPrBrief`
+  (`src/lib/hooks/reviews.ts`), the query/mutation pair behind `IntentCard`
+  and `PrBriefCard` respectively.
 - **Run:** `pnpm dev` (`:3000`). **Test:** `pnpm test` (vitest + jsdom, fetch
   mocked — no API needed). **Typecheck:** `pnpm typecheck`.
 
@@ -36,7 +39,7 @@ flowchart TD
   SETTINGS["/settings/:section<br/>API keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
-  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss)<br/>GET /pulls/:id/intent · POST /pulls/:id/intent/refresh"| API
+  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss)<br/>GET /pulls/:id/intent · POST /pulls/:id/intent/refresh<br/>GET /pulls/:id/brief · POST /pulls/:id/brief/refresh"| API
   AGENTS -->|"/agents · /agents/:id · /agents/:id/skills"| API
   SKILLS -->|"/skills · /skills/:id · /skills/:id/versions · /:id/stats<br/>/skills/import/preview"| API
   CONV -->|"GET /repos/:id/conventions<br/>POST /repos/:id/conventions/extract · PATCH /conventions/:id"| API

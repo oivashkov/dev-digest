@@ -103,9 +103,95 @@ dedup logic exists in v1, so repeated scans would accumulate near-duplicate
 candidates indefinitely). `src/modules/conventions/{routes,service
 ,repository}.ts`.
 
+### 2026-08-23 — Onboarding generation: permissive LLM schema, strict persistence schema — two Zod schemas for one feature, not one
+
+**What:** `onboarding/prompt.ts`'s `OnboardingGenerationSchema` (the
+`completeStructured` boundary) is deliberately permissive — `kind:
+z.string()`, uncapped `links` — while the shared `@devdigest/shared`
+`Onboarding` contract keeps the narrowed 5-value `kind` enum and is only
+`.parse()`d in `service.ts` AFTER `helpers.ts#normalizeTour` has discarded
+bad `kind`s, deduped, capped links to 4, and filtered unindexed paths.
+**Why:** SPEC-02's ACs require PER-SECTION salvage ("discard that section",
+"persist the sections it did return", "persist at most 4 links") — a strict
+`z.enum` at the structured-output boundary fails the WHOLE parse (all 5
+sections) on one hallucinated `kind`, which a per-section discard rule
+cannot survive.
+**Rejected:** reusing the shared `Onboarding` contract itself as the
+`completeStructured` schema, the way `ConventionExtractionSchema` mirrors
+`ConventionCandidate` 1:1 (`conventions/prompt.ts`). That precedent works
+there because conventions has no discard/truncate AC — a convention
+candidate is either well-formed or dropped whole-array-wise on a schema
+mismatch, which is acceptable for that feature but not for a 5-section
+document where losing all 5 over 1 bad `kind` fails the "partial" AC
+outright. Any future feature with a similar "salvage what's valid, cap the
+rest" AC should copy THIS split, not the conventions 1:1 pattern.
+`src/modules/onboarding/{prompt,helpers,service}.ts`.
+
+### 2026-08-24 — A fit-to-budget trimmer needs raw structured signals, not the already-rendered prompt-input shape
+
+**What:** `risk-brief.ts`'s `fitRiskBriefPromptToBudget(sections, tokenizer,
+budget)` takes a *different*, wider input type (`RiskBriefFitSections`:
+raw `files`/`blast`/`ticket`/`planExcerpts`) than the
+`RiskBriefPromptInput` it eventually produces and measures — it re-renders
+`diffStat`/`blastSummary` internally at each candidate size via
+`buildDiffStat`/`buildBlastSummary` (both generalized with an optional
+row/symbol-cap + sort-mode parameter) rather than truncating the
+already-rendered strings.
+**Why:** AC32's trim rule ("retain the largest `additions + deletions`,
+stable path tiebreak") is a *structural* re-selection of which file rows
+appear, not a text truncation — you cannot recover "which of these 20
+already-joined lines had the highest churn" from the joined string alone.
+**Rejected:** having the fitter accept a plain `RiskBriefPromptInput` and
+truncate its `diffStat` string by character count — simpler signature, but
+loses the ability to reorder rows by churn and makes the "floor is the
+header line alone" guarantee (AC32) an ad-hoc string-slicing rule instead
+of `buildDiffStat`'s existing, already-tested row-selection logic.
+`src/modules/reviews/risk-brief.ts` (`RiskBriefFitSections`,
+`fitRiskBriefPromptToBudget`).
+
 ## What Works
 
-_None yet._
+- **2026-08-24** — Testing a fit-to-budget function against a *fixed*
+  budget constant (here `RISK_BRIEF_PROMPT_TOKEN_BUDGET = 8_000`, not
+  parameterized for tests) works at two tiers, and only the pure exported
+  fitter makes the first tier practical: (1) unit tests call
+  `fitRiskBriefPromptToBudget(sections, tokenizer, budget)` directly with a
+  small hand-picked `budget` (e.g. `full.tokens - 1`, computed by first
+  calling the fitter with `Number.MAX_SAFE_INTEGER`) to assert ladder order
+  and tiebreaks cheaply and deterministically; (2) integration tests going
+  through `getOrComputeRiskBrief` — where the real 8,000-token constant
+  applies — need genuinely large fixtures (title/description ~20,000 chars
+  each to force AC34's unfittable case; ~15,000-char plan excerpts to force
+  AC35's trim-log case) since there's no budget override on that path.
+  Don't try to make case (2) precise — assert structural properties (a
+  trim log fired, a section's kept-count dropped) rather than exact token
+  counts, which depend on `wrapUntrusted`/system-prompt overhead you don't
+  control from the test. `server/test/reviews-risk-brief-budget.test.ts`.
+
+- **2026-08-23** — A `GET` fired immediately after `container.jobs.enqueue()`
+  resolves (no `setTimeout`/fake timer) reliably observes the job's
+  transitional status (`queued`/`running` → derived `generating`), because
+  `enqueue()` only awaits the DB insert before returning — the `p-queue`
+  callback that flips the row to `running` and calls the handler is
+  scheduled via `queue.add()` but not awaited, so it hasn't run yet at the
+  point the HTTP response is sent. `test/onboarding.it.test.ts`'s "GET
+  reports generating" assertion (right after the POST, before any
+  `jobs.onIdle()`) passed deterministically, unforced, across every run.
+  Don't add an artificial delay to "wait for the job to start" in a test
+  like this — the race is already in the test's favor. `src/platform/jobs.ts`
+  (`JobRunner.enqueue`).
+
+- **2026-08-24** — For an `.it.test.ts` route test that computes intent FIRST
+  as a side effect (`getOrComputeRiskBrief` → `getOrComputeIntent` inside it,
+  same as `/pulls/:id/brief`), mocking BOTH providers up front
+  (`llm: { openai: riskBriefLlm, openrouter: intentLlm }`, each with its own
+  `structuredBySchema` fixture) is simpler than the `PUT /settings
+  {feature_models: {review_intent: {...}}}` override
+  `reviews-intent-routes.it.test.ts` uses — no extra request per test, and it
+  still stays hermetic per the 2026-08-18 "either fix shape works" note
+  below. Confirmed working for a route that (unlike `/pulls/:id/review`)
+  can't just omit mentioning `review_intent`'s provider.
+  `test/reviews-risk-brief-routes.it.test.ts`.
 
 ## What Doesn't Work
 
@@ -204,6 +290,29 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-24** — For a single-column `jsonb` blob holding a WHOLE Zod-typed
+  object (e.g. `pr_brief.json` — one `PrRiskBrief`, unlike `pr_intent`'s
+  per-field typed columns), the read accessor's degrade-on-malformed strategy
+  is a whole-object `Schema.safeParse(row.json)` → `undefined` on failure, not
+  `getIntent()`'s per-field coalesce (`confidence ?? 0`). A single `safeParse`
+  is simpler here specifically because there's only one column to validate —
+  `getIntent()`'s field-by-field coalescing exists because `pr_intent` spreads
+  the same data across several nullable columns, each needing its own
+  fallback. Don't port the coalesce pattern to a single-jsonb-column table;
+  don't port whole-object `safeParse` to a multi-column one either — the two
+  degrade strategies exist for the shapes they were built for.
+  `server/src/modules/reviews/repository/pull.repo.ts` (`getPrBrief` vs.
+  `getIntent`).
+
+- **2026-08-23** — `RepoIntel.getCriticalPaths(repoId)` is implemented, not a
+  stub — but it returns `string[][]`, dependency **chains** seeded from
+  `CRITICAL_PATH_ROOTS = 5` top-ranked files and walked `BFS_DEPTH` hops along
+  `file_edges` (`repo-intel/service.ts:754-795`), not a flat list of
+  individually-important files. A UI wanting single annotated files (or a
+  "used by N routes" reverse-dependency count) needs a different read —
+  `references`/`file_edges` directly — this method will not produce that
+  shape. Surfaced writing `specs/02-onboarding-tour.md` (Open question 13),
+  whose screenshot showed exactly that mismatched shape.
 - **2026-08-20** — `RepoIntel.getBlastRadius`'s `BlastResult.callers` arrives
   at any consumer ALREADY capped to `MAX_CALLERS_PER_SYMBOL` (20) per
   `viaSymbol` — the facade's `capCallersPerSymbol` runs inside
@@ -275,6 +384,19 @@ _None yet._
   `isWithinClone` (all exported from `intent.ts`) for any new feature that
   needs to read a repo file at a path sourced from untrusted text, rather than
   re-deriving a guard or assuming `readFile` is safe by default.
+  **Refined 2026-08-23 building Project Context
+  (`specs/01-project-context-plan.md`):** "reuse `isAllowedPlanRefShape`" was
+  too broad — that allowlist is scoped to a *different* feature's shapes
+  (`specs/*.md` / `docs/**/*.md` / `docs/plans/**`) and widening it to cover
+  Project Context's `**/specs/**/*.md` / `**/docs/**/*.md` / bare
+  `**/INSIGHTS.md` shapes would have let a PR-intent plan-ref resolve an
+  `INSIGHTS.md` path it was never meant to. `server/src/modules/context/helpers.ts`
+  instead defines its own project-context-local shape allowlist and composes it
+  with the **unchanged, reused** `isWithinClone` — the containment check is the
+  generic, safely-reusable half; the shape allowlist is feature-specific and
+  should get its own copy rather than widening the existing one. Reuse
+  `isWithinClone` by default; only reuse `isAllowedPlanRefShape` itself if the
+  new feature's accepted path shapes are genuinely identical to intent's.
 
 - **2026-08-18** — `Container.reviewRepo` (the shared getter, documented in
   `container.ts` as "so consuming modules use `container.reviewRepo` instead
@@ -313,6 +435,21 @@ _None yet._
   assuming `GET /skills/:id/versions` returning `[]` is a bug in the
   versions feature itself. `src/db/seed.ts` (skill-seeding loop),
   `src/modules/skills/repository.ts` (`insert`/`snapshotVersion`).
+
+- **2026-08-24** — Re-declaring `intent.ts`'s private `logInfo`/`logWarn` dual-
+  shape-logger helpers locally (they aren't exported, and `intent.ts` is
+  read-only for every step of `specs/03-pr-why-risk-brief-plan.md`) must
+  narrow the type guard to the REAL `RunLogger` type
+  (`import type { RunLogger } from '../../platform/run-logger.js'`), not an
+  ad-hoc inline shape like `{ step: unknown; info: (...) => void }` — the
+  latter fails `tsc` with `TS2677: A type predicate's type must be
+  assignable to its parameter's type` because `IntentLog` is a union with
+  `RunLogger` (which has several more required members than just `step`/
+  `info`), so a narrower inline object type isn't assignable to it. Fix:
+  `function isRunLogger(log: IntentLog): log is RunLogger { return typeof
+  (log as RunLogger).step === 'function'; }` — the same signature
+  `intent.ts` itself uses; don't try to avoid the extra import by inlining a
+  duck-typed predicate. `server/src/modules/reviews/risk-brief.ts`.
 
 ## Tool & Library Notes
 

@@ -89,9 +89,27 @@
     "tabs": {
       "config": "Config",
       "preview": "Preview",
+      "context": "Context",
       "evals": "Evals",
       "stats": "Stats",
       "versions": "Versions"
+    }
+  },
+  "context": {
+    "title": "Project context to use",
+    "subtitle": "Documents attached here are inherited by every agent this skill is linked to (when enabled).",
+    "attachedCount": "{attached} of {total} attached",
+    "filterPlaceholder": "Filter documents…",
+    "hint": "Any agent using this skill inherits these documents — no per-agent re-picking needed. Order is decided by the agent's own attachments and linked-skill order, not here.",
+    "noDocuments": "No documents match. Add Markdown under specs/, docs/, or a repo-root INSIGHTS.md, then re-index on the Project Context page.",
+    "noRepo": "Select a repo to attach project-context documents.",
+    "saving": "Saving…",
+    "missing": "missing",
+    "detach": "Detach",
+    "serializesAs": {
+      "title": "Serializes as",
+      "hint": "Attached documents merge into the agent's single ## Project context prompt block — this skill has no heading of its own.",
+      "heading": "## Project context"
     }
   },
   "evals": {

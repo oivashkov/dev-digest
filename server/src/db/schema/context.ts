@@ -10,6 +10,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import type { Onboarding } from '@devdigest/shared';
 import { workspaces } from './core';
 import { repos } from './repos';
 
@@ -121,6 +122,6 @@ export const onboarding = pgTable('onboarding', {
   repoId: uuid('repo_id')
     .primaryKey()
     .references(() => repos.id, { onDelete: 'cascade' }),
-  json: jsonb('json').notNull(),
+  json: jsonb('json').$type<Onboarding>().notNull(),
   generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow().notNull(),
 });

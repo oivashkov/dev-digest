@@ -11,6 +11,7 @@ import type {
   PrBlastRadius,
   PrIntentRecord,
   PrReviewComment,
+  PrRiskBrief,
   ReviewRecord,
   ReviewRunResponse,
   RunEvent,
@@ -119,6 +120,41 @@ export function useRefreshPrIntent(prId: string | null | undefined) {
     onSuccess: (data) => {
       qc.setQueryData(["pr-intent", prId], data);
       qc.invalidateQueries({ queryKey: ["pr-intent", prId] });
+    },
+  });
+}
+
+// ---- PR risk brief (Why + Risk Brief): compute-if-missing GET + forced-refresh POST --
+/** The PR's `{what, why, risk_level, risks[], review_focus[]}` brief. GET is
+   compute-if-missing (server computes and caches on first call), so mounting
+   this hook is what "opening the PR" lazily triggers — same contract as
+   usePrIntent. A 404 means the server tried and genuinely couldn't compute it
+   (not "not opened yet") — don't retry automatically, it won't succeed
+   without a Refresh. */
+export function usePrBrief(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["pr-brief", prId],
+    queryFn: () => api.get<PrRiskBrief>(`/pulls/${prId}/brief`),
+    enabled: !!prId,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status === 404) return false;
+      return failureCount < 3;
+    },
+  });
+}
+
+/** Force a fresh risk-brief computation (the PrBriefCard's Refresh button),
+   then refresh usePrBrief's cache with the result. */
+export function useRefreshPrBrief(prId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!prId) throw new Error("useRefreshPrBrief: prId is required");
+      return api.post<PrRiskBrief>(`/pulls/${prId}/brief/refresh`);
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(["pr-brief", prId], data);
+      qc.invalidateQueries({ queryKey: ["pr-brief", prId] });
     },
   });
 }

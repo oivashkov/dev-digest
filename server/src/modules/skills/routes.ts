@@ -1,11 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { SkillSource, SkillType } from '@devdigest/shared';
+import { SetContextDocsBody, SkillSource, SkillType } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { NotFoundError } from '../../platform/errors.js';
 import { SkillsService } from './service.js';
+
+/** `GET /skills/:id/context?repo_id=…` — repo-scoped (Q2). */
+const ContextQuery = z.object({ repo_id: z.string().uuid() });
 
 /**
  * Skills module.
@@ -117,6 +120,33 @@ export default async function skillsRoutes(appBase: FastifyInstance) {
     if (!stats) throw new NotFoundError('Skill not found');
     return stats;
   });
+
+  app.get(
+    '/skills/:id/context',
+    { schema: { params: IdParams, querystring: ContextQuery } },
+    async (req) => {
+      const { workspaceId } = await getContext(app.container, req);
+      const docs = await service.getContextDocs(workspaceId, req.params.id, req.query.repo_id);
+      if (!docs) throw new NotFoundError('Skill not found');
+      return docs;
+    },
+  );
+
+  app.put(
+    '/skills/:id/context',
+    { schema: { params: IdParams, body: SetContextDocsBody } },
+    async (req) => {
+      const { workspaceId } = await getContext(app.container, req);
+      const docs = await service.setContextDocs(
+        workspaceId,
+        req.params.id,
+        req.body.repo_id,
+        req.body.paths,
+      );
+      if (!docs) throw new NotFoundError('Skill not found');
+      return docs;
+    },
+  );
 
   app.post(
     '/skills/import/preview',

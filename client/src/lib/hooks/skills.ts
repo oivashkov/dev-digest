@@ -1,9 +1,16 @@
 /* hooks/skills.ts — React Query hooks for the Skills Lab list/editor + import. */
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import type { Skill, SkillStats, SkillSummary, SkillType, SkillVersion } from "@devdigest/shared";
+import type {
+  AttachedContextDoc,
+  Skill,
+  SkillStats,
+  SkillSummary,
+  SkillType,
+  SkillVersion,
+} from "@devdigest/shared";
 
 /** Each row includes its usage summary (used_by/pull_frequency_pct/accept_rate_pct)
  *  — see SkillSummary's doc comment in @devdigest/shared. */
@@ -95,6 +102,53 @@ export function useSkillStats(id: string | null | undefined) {
     queryKey: ["skill", id, "stats"],
     queryFn: () => api.get<SkillStats>(`/skills/${id}/stats`),
     enabled: !!id,
+  });
+}
+
+/** A skill's attached Project Context documents, scoped to `repoId` (Q2) —
+ *  backs the Skill editor's Context section. Unordered (Q13) — the server
+ *  already sorts by normalized path. */
+export function useSkillContextDocs(skillId: string | null | undefined, repoId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["skill-context-docs", skillId, repoId],
+    queryFn: () => api.get<AttachedContextDoc[]>(`/skills/${skillId}/context?repo_id=${repoId}`),
+    enabled: !!skillId && !!repoId,
+  });
+}
+
+/**
+ * Attached context documents for MULTIPLE skills at once, scoped to `repoId`
+ * — the Agent editor's Context tab needs this to show skill-inherited
+ * documents as read-only ticked rows (Q3). Returns a `Map<skillId,
+ * AttachedContextDoc[]>`; a skill whose query hasn't resolved yet (or
+ * `skillIds`/`repoId` empty) is simply absent from the map rather than
+ * blocking the whole tab on the slowest skill.
+ */
+export function useSkillsContextDocs(skillIds: string[], repoId: string | null | undefined) {
+  const queries = useQueries({
+    queries: skillIds.map((skillId) => ({
+      queryKey: ["skill-context-docs", skillId, repoId],
+      queryFn: () => api.get<AttachedContextDoc[]>(`/skills/${skillId}/context?repo_id=${repoId}`),
+      enabled: !!skillId && !!repoId,
+    })),
+  });
+  const byId = new Map<string, AttachedContextDoc[]>();
+  skillIds.forEach((skillId, i) => {
+    const data = queries[i]?.data;
+    if (data) byId.set(skillId, data);
+  });
+  return byId;
+}
+
+/** Full-replace the skill's attached context-document set for a repo. */
+export function useSetSkillContextDocs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ skillId, repoId, paths }: { skillId: string; repoId: string; paths: string[] }) =>
+      api.put<AttachedContextDoc[]>(`/skills/${skillId}/context`, { repo_id: repoId, paths }),
+    onSuccess: (_data, { skillId, repoId }) => {
+      qc.invalidateQueries({ queryKey: ["skill-context-docs", skillId, repoId] });
+    },
   });
 }
 

@@ -8,6 +8,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 |-------|-------|-------------|
 | [engineering-insights](engineering-insights/SKILL.md) | Project | Read `<module>/INSIGHTS.md` before a task, record what was learned after |
 | [pr-self-review](pr-self-review/SKILL.md) | Project | Maps a diff to applicable skills, reviews, blocks the PR on any CRITICAL finding |
+| [workflow-retro](workflow-retro/SKILL.md) | Project | Manual retro over a multi-agent workflow that already ran — token cost, human-in-the-loop cost, per-agent friction, paired with concrete recommendations |
 | [backend-onion-architecture](backend-onion-architecture/SKILL.md) | Backend | Onion layering in server/ — routes/service/repository/adapters, dependency direction |
 | [fastify-best-practices](fastify-best-practices/SKILL.md) | Backend | Fastify routes, plugins, JSON-schema validation, error handling |
 | [drizzle-orm-patterns](drizzle-orm-patterns/SKILL.md) | Backend | Drizzle schema, queries, relations, transactions, migrations |
@@ -20,6 +21,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [typescript-expert](typescript-expert/SKILL.md) | Full-stack | Type-level programming, performance, tooling, migrations |
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
+| [ears-requirements](ears-requirements/SKILL.md) | Shared | Testable requirements in EARS form, with this project's bilingual `WHEN (КОЛИ)`/`shall (shall)` trigger convention |
 
 ## What Are Skills?
 

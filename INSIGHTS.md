@@ -16,6 +16,120 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-25 — Renamed the `specreator` subagent to `spec-creator`
+
+**What:** `.claude/agents/specreator.md` → `.claude/agents/spec-creator.md`
+(`git mv`, frontmatter `name:` updated to match), plus every current-state
+reference across `.claude/agents/README.md`, `.claude/agents/diagrams.md`,
+`.claude/agents/implementation-planner.md`, `.claude/skills/run-plan/`,
+`.claude/skills/workflow-retro/`, every `<module>/specs/README.md` +
+`e2e/docs/README.md`, and `specs/03-pr-why-risk-brief{,-plan}.md`'s two
+passing tool-name mentions. Hyphenation only — tools, model, scope, and
+behavior are unchanged.
+**Why:** user-requested naming-convention fix, 2026-08-25 — every other
+multi-word agent in this repo is kebab-case
+(`implementation-planner`, `architecture-reviewer`, `plan-verifier`,
+`doc-writer`, `test-writer`); `specreator` was the one holdover without a
+hyphen.
+**Note:** the entry directly below (2026-08-23) is left as-written — it
+records the agent's introduction under its original name and is a historical
+decision record, not a live reference; do not "fix" its wording to match the
+new name.
+
+### 2026-08-23 — Added `specreator`, a dedicated spec-authoring subagent; reverses the same day's "human/`doc-writer`-driven only" decision below
+
+**What:** New `.claude/agents/specreator.md` (`Read`, `Write`, `Edit`, `Grep`,
+`Glob`, `Bash`, `Skill`; model opus; write scope prompt-restricted to `specs/`
+root+modules plus the `e2e/docs/` exception). Takes a feature description
+plus whatever design sources exist (screenshots pasted into the
+conversation, text, a Figma/other link it cannot fetch, existing code) and
+writes a `specs/` file in a fixed EARS-based template (`Spec ID`/`Status`/
+`Supersedes` header; Problem & user, Goals/Non-goals, User stories,
+Acceptance criteria (EARS) with bilingual triggers `WHEN (КОЛИ)` +
+`shall (shall)`, Edge cases, Non-functional requirements, Inputs and
+provenance, Untrusted inputs, Open questions). Every design gap it finds
+(missing state, uncovered edge case, unclear cross-module contract, UX
+rough edge) goes back to the user as a question or an accept/decline-able
+proposal — never resolved silently. All five `specs/README.md` templates
+(root, `server`, `client`, `reviewer-core`, plus new `mcp-server/specs/README.md`)
+were rewritten to this one shared template, replacing the previous
+per-module ad hoc shapes and the `draft|agreed|in progress|shipped` status
+vocabulary with `draft|approved|implemented`. `e2e/` keeps its written specs
+in `e2e/docs/` (its `specs/` holds only executable `*.flow.json`), now noted
+in both `e2e/specs/README.md`'s sibling `e2e/docs/README.md` and
+`specreator.md` itself.
+**Why:** the user asked, session of 2026-08-23, for a dedicated
+Spec-Driven-Development authoring agent, explicitly including design-source
+analysis (screenshots/Figma/text/existing code) for gap-finding — a role no
+existing agent filled since `implementation-planner` reviews requirements
+but never authors them (see the entry directly below). Confirmed
+user-facing decisions during design: reuse the existing root `specs/`
+(not a new `docs/specs/`) since its README already stated the intended
+cross-package rule; fully replace the per-module templates rather than
+layering a technical appendix; grant `Write`+`Edit` (not `Write`-only)
+inside `specs/` so a draft can be revised in place before approval; keep the
+no-`WebFetch` convention shared by every other agent (Figma links are noted,
+not opened).
+**Rejected:** giving `specreator` `WebFetch` as an exception for Figma
+links — every other content-authoring agent in this repo already routes
+external unknowns to "ask the user" or `researcher` rather than fetching
+directly, and a bare Figma URL usually needs auth this agent won't have
+anyway. Also rejected: a `docs/specs/` location distinct from the existing
+root `specs/` — would have produced two competing cross-package spec
+locations for no reason, when the existing one's README already described
+the intended rule almost verbatim.
+**Correction to the entry below:** this reverses "keeps `specs/` authorship
+a deliberate, human- (or `doc-writer`-) driven act, never a byproduct of
+asking for a plan" — that constraint was about `implementation-planner`
+specifically not blurring into spec authorship as a plan-writing
+side-effect, which still holds (`implementation-planner` still never
+authors a spec). It was not meant to rule out a purpose-built spec-authoring
+agent entirely, and the user has now explicitly asked for one.
+
+### 2026-08-23 — `planner` renamed to `implementation-planner`; spec-authoring surface removed, requirements review + execution-mode question added
+
+**What:** `.claude/agents/planner.md` → `.claude/agents/implementation-planner.md`
+(new `name:`, updated `description:`), with every cross-reference to it
+(`README.md`, `diagrams.md`, `implementer.md`, `architecture-reviewer.md`)
+renamed to match. Three behavioral changes to the agent itself:
+1. Dropped the output format's "Suggested spec path" section entirely — the
+   agent no longer names or implies a `specs/` persistence path for its own
+   plan. `implementer.md`'s precondition step (persisting a conversational
+   plan before acting on it) now always falls back to
+   `<module>/specs/<slug>-plan.md` on its own, since there is nothing left
+   for the planner to suggest.
+2. Added a "Requirements review" step (new §1): the agent now reviews
+   whatever requirements already exist (request text + `<module>/specs/`)
+   for gaps/ambiguity and surfaces them as clarifying questions, plus an
+   explicit "Recommendations" output section for a better approach when one
+   is grounded in what it read — but the boundary is explicit and absolute:
+   it never authors, edits, or amends a specification/requirements document
+   itself, under any phrasing.
+3. Added a mandatory execution-mode question (§0): always ask the user
+   single-agent (one sequential `implementer` pass) vs. multi-agent
+   (disjoint Owned paths for parallel `implementer` instances) before
+   writing steps, rather than inferring it from phrasing. Plan construction
+   (§6) now only enforces strict Owned-path disjointness when multi-agent
+   was confirmed; single-agent mode only needs a stated "Depends on" where
+   sequencing actually matters.
+**Why:** the old `planner.md` blurred "plan the implementation" with
+"produce the artifact that becomes the spec" by suggesting a `specs/` path
+for its own output — conflating a disposable planning document with the
+curated, intentional specs `AGENTS.md`'s context-search order treats as
+source of truth. Splitting them keeps `specs/` authorship a deliberate,
+human- (or `doc-writer`-) driven act, never a byproduct of asking for a
+plan. The execution-mode question was previously answered implicitly by how
+steps happened to come out; asking up front avoids a plan that's silently
+unsafe to parallelize (or needlessly fragmented for a single sequential
+run).
+**Rejected:** keeping the old name and only editing behavior — the user
+asked for the rename specifically, and it also disambiguates the agent from
+a "spec-writing" reading of "planner" going forward. Also rejected: giving
+`implementation-planner` a light `Write` scoped to a `plans/` directory to
+persist its own output — same harness limitation already recorded above
+(no path-scoped `Write` grant), and it would reopen exactly the blurred
+boundary this change removes.
+
 ### 2026-08-17 — Four new pipeline subagents (`test-writer`, `architecture-reviewer`, `plan-verifier`, `doc-writer`) split into read-only-auditor vs. prompt-scoped-write tiers
 
 **What:** Per `docs/plans/new-subagents.md`, added
@@ -138,13 +252,81 @@ input but left responses unchecked, so contract drift surfaced in the browser.
 
 ## What Works
 
-_None yet._
+- **2026-08-23** — When a human resolves a `specreator` spec's "Open
+  questions" one by one (as happened for `specs/01-project-context.md`'s 13
+  gaps), do the full ripple for each question — its Open-questions entry
+  **and** every downstream Acceptance-criteria/Goals/Edge-case touchpoint it
+  affects — in one Edit pass, not two. Splitting them (mark "RESOLVED" first,
+  discover later that an AC also needed the same decision) roughly doubled
+  the Edit-call count for questions Q7, Q9, Q10, and Q13 in that session — a
+  `/workflow-retro` run over it counted ~28 Edit calls against one spec file
+  after the agent's single handoff. Read the whole spec once per question
+  before editing to find every place a decision needs to land, not just its
+  own Open-questions paragraph.
+  **Partially confirmed 2026-08-23, same day, on `specs/02-onboarding-tour.md`'s
+  13 questions:** batching every round's Open-questions resolutions into one
+  Edit call (all 4 in one pass, then all 9 in another, instead of one Edit
+  per question) cut the count to ~10 Edit calls total for that spec — but the
+  *downstream* ripple (Acceptance-criteria/Contract-changes/Inputs-table
+  touchpoints) was still mostly done as separate follow-up edits, not folded
+  into the same pass. The batching helps; it does not by itself replace
+  "read the whole spec once per question to find every place it lands."
+
+- **2026-08-23** — `Agent` with `isolation: "worktree"` is an effective
+  mitigation when a **different, concurrent** Claude Code session is heavily
+  active in the same checkout. Two plain (non-isolated) `specreator` launches
+  for `specs/02-onboarding-tour.md` failed back-to-back while a peer session
+  was `busy` implementing SPEC-01 in the same working tree — one stalled 600s
+  with no progress, one was killed mid-run — a third attempt in an isolated
+  worktree completed cleanly. Trade-off: the worktree is a clean checkout of
+  the **last commit**, so it cannot see the peer session's own uncommitted
+  work (a feature, not a bug, when that work shouldn't be read as grounding
+  anyway) nor any just-committed-but-not-yet-fetched sibling spec — one run
+  had to carry "spec 01 wasn't readable from this worktree" as an Open
+  question until the file was copied back and compared by hand. The output
+  file(s) must be manually copied out of
+  `.claude/worktrees/agent-<id>/<path>` into the primary checkout, and the
+  worktree + its branch removed afterward (`git worktree remove --force`,
+  `git branch -D`) — this does not happen automatically when the run produced
+  changes.
 
 ## What Doesn't Work
 
 _None yet._
 
 ## Codebase Patterns
+
+- **2026-08-24** — Amending an **already-approved, already-implemented**
+  spec (`specs/03-pr-why-risk-brief.md`, adding the 8k-token prompt budget)
+  is append-only: new acceptance criteria get the next free numbers
+  (25-35) and are placed in the group where they belong *logically* — here
+  between the "LLM call / output" (9-10) and "Grounding" (11-13) groups —
+  so item numbering is intentionally non-monotonic in document order, with
+  a one-line parenthetical on the new group's heading saying why. Existing
+  items are never renumbered or reworded (their numbers are referenced from
+  `specs/03-pr-why-risk-brief-plan.md`, from other ACs, and from code
+  comments), `Status:`/`Supersedes:` are left alone (an amendment is not a
+  supersede), and the rationale lands as a new dated numbered item in the
+  spec's own "Open questions" section, matching how that file already
+  records product-owner decisions. Check `git diff --stat` shows
+  insertions-only before reporting such an amendment done.
+
+- **2026-08-24** — Two pieces of PR Why + Risk Brief scaffolding already
+  existed, unused, before `specs/03-pr-why-risk-brief.md` was written:
+  `pr_brief` table (`{ prId, json }`, zero writers/readers,
+  `server/src/db/schema/reviews.ts:93-97`) and a registered `risk_brief`
+  `FeatureModelId` defaulting to `openai/gpt-4.1`
+  (`server/src/vendor/shared/contracts/platform.ts:64-70`). A **third**
+  piece, `brief.ts`'s `PrBrief { intent, blast, risks, history }`, is a
+  false match — same "zero writers" status but a different shape (no
+  `what`/`why`/`risk_level`/`review_focus`). SPEC-03 resolves this the same
+  way `blast.ts` already resolved the identical situation for
+  `PrBlastRadius` (see its own doc-comment, `blast.ts:1-19`): reuse the
+  table and the feature-model id as-is, but add a **new** file
+  `contracts/risk-brief.ts` rather than reshaping the old `PrBrief` —
+  `PrBrief` stays untouched and still unpopulated. Grep for `pr_brief`,
+  `risk_brief`, and `PrBrief` before assuming any of the three is free real
+  estate for a new feature.
 
 - **2026-08-18** — Extending a Zod contract with a `.default([])` field
   breaks every existing *hand-written object literal* typed as that schema
@@ -159,6 +341,22 @@ _None yet._
   step in a multi-step plan adds fields a *later, dependent* step's file is
   supposed to fill in (Step 2 here); grep every hand-built literal of a
   contract before assuming "additive" means zero breakage.
+  **Sharper, silent-in-both-directions case found 2026-08-23 building Project
+  Context (`specs/01-project-context-plan.md` Step 1):** the "caught by
+  typecheck" guarantee above depends on the target column being
+  `.$type<Contract>()`-annotated in Drizzle. `agent_versions.config_json` is a
+  bare `jsonb('config_json').notNull()` with **no** `.$type<AgentVersionConfig>()`
+  (`server/src/db/schema/agents.ts:45`), so adding `context_docs` to
+  `AgentVersionConfig` did **not** fail `pnpm typecheck` when the hand-built
+  literal in `AgentsRepository.snapshotVersion`
+  (`server/src/modules/agents/repository.ts`) omitted it — the compiler had no
+  type to check the literal against. Worse, `.default([])` on the new field then
+  makes `AgentVersionConfig.parse(row.configJson)` in `toAgentVersionDto`
+  (`server/src/modules/agents/helpers.ts`) succeed forever on old snapshots that
+  never contain it, silently returning the default instead of erroring. A green
+  `pnpm typecheck` is not evidence a jsonb-backed hand-built literal was updated —
+  grep the literal itself, and check whether the backing column is
+  `.$type<>()`-annotated before trusting the compiler to catch a missed field.
 - **2026-08-12** — A feature can be scaffolded consistently across the DB
   schema, the Zod contract, AND a pure-engine prompt slot with **zero lines
   connecting them at runtime** — no module, no route, no UI, no caller ever
@@ -175,6 +373,29 @@ _None yet._
   missing spread expression) before estimating how much work remains.
   `server/src/modules/reviews/run-executor.ts`,
   `reviewer-core/src/prompt.ts:85` (`assemblePrompt`).
+  **Second, larger instance confirmed 2026-08-23 while speccing Project
+  Context (`specs/01-project-context.md`)** — the same pattern spans FIVE
+  layers there, all present, none connected: the `SpecFile`/`IndexStatus` Zod
+  contracts (`vendor/shared/contracts/platform.ts:271-284`), client hooks
+  `useContextFiles`/`useReindexContext` already calling
+  `GET /repos/:repoId/context` + `POST /repos/:repoId/context/reindex`
+  (`client/src/lib/hooks/core.ts:123-138`), a fully-written i18n namespace
+  `client/messages/en/context.json` (naming `.devdigest/specs/` as the root),
+  the `code_chunks` table with an `embedding vector(1536)` column and a
+  `source: 'code'|'docs'|'spec'` enum (`server/src/db/schema/context.ts:31-47`),
+  and the engine's `specs` prompt slot rendering `## Project context` with
+  `wrapUntrusted` (`reviewer-core/src/prompt.ts:104,125`) plus
+  `RunTrace.specs_read` and the trace drawer UI that renders both
+  (`TraceBody.tsx:39-51,90-92`). **Zero** server routes implement
+  `/repos/:id/context`, **zero** writers touch `code_chunks`, and
+  `run-executor.ts:319` hardcodes `specs_read: []`. Two traps for whoever
+  builds it: the pre-existing contract is **repo**-scoped while agents/skills
+  are **workspace**-scoped, so "which repo does an attached path resolve
+  against" is a real design decision the scaffolding silently pre-answers;
+  and `client/messages/en/context.json` encodes a `.devdigest/specs/` layout
+  that conflicts with a repo-wide `specs/`+`docs/`+`INSIGHTS.md` reading.
+  Grep `messages/en/<ns>.json` and `lib/hooks/*` for a feature's namespace
+  before scoping it — the copy and the endpoints may already dictate a shape.
 - **2026-08-04** — `server/src/vendor/shared` and `client/src/vendor/shared`
   are two independent copies of `@devdigest/shared`, not a symlink or a build
   step — editing one does NOT update the other, and nothing fails loudly when
@@ -207,6 +428,24 @@ _None yet._
 
 ## Tool & Library Notes
 
+- **2026-08-23** — The `<total_tokens>N tokens left</total_tokens>` system
+  reminder attached to tool results is **not** a monotonically-decreasing
+  usage counter — it can jump back up between turns (context summarization/
+  compaction frees budget), so diffing "first seen" against "most recent"
+  across a whole session does not yield a trustworthy orchestrator-thread
+  token cost, only a same-turn or same-stretch approximation at best.
+  Discovered writing the `workflow-retro` skill (`.claude/skills/
+  workflow-retro/SKILL.md` §2), whose own orchestrator-cost method relies on
+  this diff — treat any number derived from it as directional within one
+  uninterrupted stretch of turns, never as a session-wide total.
+  **Compounding gap, confirmed 2026-08-23 same day:** a `failed`/`killed`
+  `Agent` task-notification carries no `<usage>` block at all (only a
+  `<result>` fragment of whatever it managed to output) — two stalled/killed
+  `specreator` retries for `specs/02-onboarding-tour.md` did real,
+  tool-consuming work before dying, but `/workflow-retro`'s per-agent
+  accounting has no figure to attribute to either attempt. Retried-agent sunk
+  cost is systematically invisible to this method, not just imprecise —
+  say so explicitly rather than omitting the failed attempts from the count.
 - **2026-08-06** — `server`'s hermetic vitest suite (`pnpm exec vitest run
   --exclude '**/*.it.test.ts'`) crashes the whole run intermittently on Node
   v24.4.0 with `RangeError: Maximum call stack size exceeded` inside

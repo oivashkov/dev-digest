@@ -72,6 +72,47 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-23** — `src/vendor/ui/nav.ts`'s exported `NAV` constant has **no
+  composition/extension point in app code** — every consumer
+  (`src/components/app-shell/useGlobalShortcuts.ts`,
+  `useShellCommands.ts`) imports `NAV` straight from `@devdigest/ui`. Despite
+  `AGENTS.md`'s "Do not touch: `src/vendor/ui`" rule, every nav-item addition
+  to date has edited `nav.ts` directly instead: Skills Lab (`9e814a1`),
+  Conventions Lab (`84283ed`), and Project Context (`specs/01-project-context-plan.md`
+  Step 6, this session) — the plan's own instruction to "extend/compose `NAV`
+  in app code rather than editing the vendored registry" could not be
+  followed as written because that seam doesn't exist yet.
+  **Investigated and settled 2026-08-23, same day (post-implementation nav-section
+  fix):** a real seam is bigger than it looks — `Sidebar.tsx`
+  (`src/vendor/ui/shell/Sidebar.tsx`) imports `NAV` directly from `../nav` with
+  no override prop, and is itself wrapped by vendored `AppFrame.tsx` with no
+  `nav` field on `ShellContext` (`src/vendor/ui/shell/types.ts`) either.
+  Building a composition seam means adding an optional `nav` prop across
+  **three** vendored files (`types.ts`, `AppFrame.tsx`, `Sidebar.tsx`) — *more*
+  vendor surface touched than the single-file `nav.ts` edit, not less.
+  **Decision: keep editing `nav.ts` directly** as the accepted convention;
+  don't attempt the seam again until a feature's need for it clearly outweighs
+  a three-file vendor change. `client/AGENTS.md`'s do-not-touch list has no
+  exception clause for this — treat this entry as the documented one.
+
+- **2026-08-23** — `src/components/app-shell/helpers.ts:29`'s `activeKeyFor`
+  matches the active nav key by `pathname.includes("/onboarding")`, a
+  substring test — so the add-repo wizard at `/onboarding` already resolves
+  to the `onboarding-tour` sidebar key today, even though no `NAV` entry uses
+  that key yet (harmless only because nothing currently highlights on it). Any
+  future per-repo route whose slug is a prefix/substring of an existing
+  top-level route (here, a real "Onboarding Tour" nav item under
+  `/repos/:repoId/onboarding`) needs a `startsWith("/repos/")`-style guard in
+  `activeKeyFor`, not `includes`, or it will mis-highlight the wrong item the
+  moment that nav item is added. Surfaced writing
+  `specs/02-onboarding-tour.md` (Open question 10). **Fixed 2026-08-23 in
+  `client/src/components/app-shell/helpers.ts`** (SPEC-02 Step 6) — guarded
+  to `pathname.startsWith("/repos/") && pathname.includes("/onboarding")`,
+  and the real "Onboarding Tour" nav item now lives under WORKSPACE in
+  `nav.ts`. Verified against a booted `pnpm dev`: the sidebar icon renders
+  `style="color:var(--accent)"` on `/repos/:id/onboarding` and
+  `style="color:inherit"` on `/repos/:id/pulls`.
+
 - **2026-08-20** — `useSmartDiff`'s `SmartDiffFile.finding_lines` is bare
   `number[]` (deduped line numbers, no severity/id/rationale) — it cannot
   drive a per-finding severity badge or an "open this finding" click target
@@ -208,6 +249,48 @@ _None yet._
   Used to add the cost badge to `ReviewRunAccordion`'s header — zero
   contract/server changes. `client/src/app/repos/[repoId]/pulls/[number]/_components/FindingsTab/FindingsTab.tsx`
 
+- **2026-08-24** — `@devdigest/ui`'s `SeverityBadge` cannot render a
+  `RiskSeverity` (`'high'|'medium'|'low'`, from `@devdigest/shared`'s
+  `brief.ts`) — it's hardcoded to `Severity`
+  (`'CRITICAL'|'WARNING'|'SUGGESTION'|'INFO'`, `vendor/ui/primitives/tokens.ts`),
+  a completely different string domain used for `Finding.severity`. Building
+  `PrBriefCard`'s `risk_level` badge (SPEC-03), the correct pattern is the
+  generic `Badge` primitive (`color`/`bg`/`icon` props) with a local
+  `Record<RiskSeverity, {color, bg}>` map in the component's own
+  `constants.ts`, reusing the *existing* `--crit`/`--warn`/`--info` CSS vars
+  (already used by `tokens.ts`'s `SEV` map) rather than adding new tokens —
+  never try to coerce a `RiskSeverity` string into `SeverityBadge`'s prop
+  type or add a fourth `'low'`-shaped variant to `tokens.ts`.
+  `client/src/app/repos/[repoId]/pulls/[number]/_components/PrBriefCard/constants.ts`.
+
+- **2026-08-24** — `diff-viewer/FileCard`'s `open` state
+  (`useState(defaultOpen ?? ...)`) is a plain `useState` initializer — it
+  captures `defaultOpen` only at mount and does NOT react to `defaultOpen`
+  changing on a later render with the same component identity. A consumer
+  that needs an already-mounted, collapsed `FileCard` to force-open in
+  response to new props (SPEC-03 Step 7: a `review_focus[]` click landing on
+  a boilerplate file with no findings of its own, which defaults collapsed)
+  cannot just recompute `defaultOpen` and pass it down — nothing re-runs the
+  initializer. Fix from the *consumer* side (`FileCard.tsx` wasn't in this
+  step's Owned paths): give `FileCard` a `key` that changes exactly when the
+  file becomes/stops being the scroll target (`` `${path}::target-${n}` ``
+  vs plain `path`), forcing a remount so the initializer re-runs with the
+  new `defaultOpen`. Also incidentally solves "bumped nonce on the same
+  target re-triggers the scroll" for free, since the remount re-mounts
+  `CodeLine` too. `client/src/app/repos/[repoId]/pulls/[number]/_components
+  /SmartDiffViewer/SmartDiffViewer.tsx`,
+  `client/src/components/diff-viewer/FileCard/FileCard.tsx:61-63`.
+
+- **2026-08-24** — A folder's own `index.ts` barrel export (e.g.
+  `SmartDiffViewer/index.ts` exporting only `{ SmartDiffViewer }`) can lag
+  behind a type a sibling step needs to import (`ScrollTarget`), and adding
+  it isn't always in the touching step's Owned paths. `FindingsTab.tsx`
+  already has precedent for this: `import { RunHistory } from
+  "../RunHistory/RunHistory"` bypasses `RunHistory/index.ts` entirely.
+  Reused the same barrel-bypass — `import type { ScrollTarget } from
+  "../SmartDiffViewer/SmartDiffViewer"` — in both `DiffTab.tsx` and
+  `PrDetailView.tsx` rather than touching the barrel out-of-scope.
+
 - **2026-08-20** — `PrBlastRadius.symbols[].endpoints`/`.crons` (server's
   `@devdigest/shared/contracts/blast.ts`) are aggregated **per symbol**, not
   per caller — the contract has no caller→endpoint mapping (a caller-file's
@@ -278,6 +361,28 @@ _None yet._
   (or capture) a HAR/network trace before concluding the report is wrong.**
 
 ## Recurring Errors & Fixes
+
+- **2026-08-23** — A new tab that renders fine in isolation but "isn't
+  clickable" in the real page — click it, the URL's `?tab=` updates, then the
+  view silently snaps back to the first tab — means the *page-level*
+  `VALID_TABS` gate doesn't know the new key yet, not a click-handler bug.
+  `AgentEditorPageView.tsx`'s `tab` is computed as
+  `VALID_TABS.includes(search.get("tab")) ? search.get("tab") : "config"`; its
+  sibling `AgentEditorPageView/constants.ts` hardcoded
+  `VALID_TABS = ["config", "skills"]` **separately** from
+  `AgentEditor/constants.ts`'s `TABS` array, so adding a `"context"` entry to
+  `TABS` (SPEC-01 Project Context, Step 7) made the tab render and the click
+  handler fire, but the page-level gate rejected the URL value and reset it
+  every render. No test caught this because `ContextTab.test.tsx` renders the
+  tab component directly, bypassing `AgentEditorPageView`'s routing entirely —
+  isolated-component tests can't catch a page-level allowlist drift. **Fixed**
+  by deriving `VALID_TABS` from `TABS.map((tb) => tb.key)` in
+  `AgentEditor/constants.ts` and re-exporting it from
+  `AgentEditorPageView/constants.ts`, matching the pattern
+  `SkillEditor/constants.ts`/`SkillEditorPageView/constants.ts` already used
+  (which is why the equivalent Skill Editor Context section had no such bug).
+  Any new page with a `?tab=`-driven editor should derive its `VALID_TABS`
+  from the tab list, never hardcode a second copy.
 
 - **2026-08-01** — A vitest failure whose two sides look identical —
   `expected '9 119 tok' to be '9 119 tok'` — is a look-alike Unicode space, not

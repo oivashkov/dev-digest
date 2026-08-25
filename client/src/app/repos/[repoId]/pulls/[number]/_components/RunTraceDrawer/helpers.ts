@@ -1,5 +1,5 @@
 import type { LogLine } from "@devdigest/ui";
-import type { RunTrace } from "@devdigest/shared";
+import type { RunTrace, SpecRead } from "@devdigest/shared";
 
 interface RawEvent {
   t: string;
@@ -33,4 +33,14 @@ export function formatTokens(tokensIn: number, tokensOut: number): string {
  *  shown in aggregate by trace.stats.tokens_in. */
 export function approxTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+/** Sum of the server's REAL per-document token counts for the injected
+ *  project-context set (`RunTrace.specs_read`) — unlike `approxTokens`, this
+ *  is not a chars/4 estimate; the server already computed it via the
+ *  Tokenizer adapter at read time. Returns `undefined` for an empty set so
+ *  `PromptBlock` omits its token badge rather than showing "0 tok". */
+export function specsReadTokenTotal(specsRead: SpecRead[]): number | undefined {
+  if (specsRead.length === 0) return undefined;
+  return specsRead.reduce((sum, sp) => sum + sp.tokens, 0);
 }

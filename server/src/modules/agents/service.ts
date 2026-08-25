@@ -3,6 +3,7 @@ import type {
   Agent,
   AgentSkillLink,
   AgentVersion,
+  AttachedContextDoc,
   CiFailOn,
   ModelInfo,
   Provider,
@@ -10,6 +11,7 @@ import type {
 } from '@devdigest/shared';
 import { AgentsRepository } from './repository.js';
 import { toAgentDto, toAgentVersionDto } from './helpers.js';
+import { ContextService } from '../context/service.js';
 
 /**
  * A2 — agents service. Business logic for the Agents tab + Agent Editor.
@@ -50,9 +52,11 @@ export interface UpdateAgentInput {
 
 export class AgentsService {
   private repo: AgentsRepository;
+  private contextService: ContextService;
 
   constructor(private container: Container) {
     this.repo = new AgentsRepository(container.db);
+    this.contextService = new ContextService(container);
   }
 
   async list(workspaceId: string): Promise<Agent[]> {
@@ -169,6 +173,51 @@ export class AgentsService {
     const resolvedOrder = order ?? existing.length;
     await this.repo.linkSkill(agentId, skillId, resolvedOrder);
     return this.skillLinks(agentId);
+  }
+
+  /**
+   * Attached context-document set for an agent, scoped to `repoId` (Q2).
+   * Marks any persisted path discovery no longer finds as `missing: true`
+   * rather than dropping it (Q7) — the server never auto-deletes such a row.
+   * Returns `undefined` when the agent isn't in this workspace (route → 404).
+   */
+  async getContextDocs(
+    workspaceId: string,
+    agentId: string,
+    repoId: string,
+  ): Promise<AttachedContextDoc[] | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    const [rows, discovery] = await Promise.all([
+      this.repo.contextDocs(agentId, repoId),
+      this.contextService.discover(workspaceId, repoId),
+    ]);
+    const discovered = new Set((discovery?.documents ?? []).map((d) => d.path));
+    return rows.map((r) => ({
+      repo_id: r.repoId,
+      path: r.path,
+      order: r.order,
+      missing: !discovered.has(r.path),
+    }));
+  }
+
+  /**
+   * Full-replace the agent's attached context-document set for `repoId`, in
+   * the given order (drag order, Q3). Every path was already validated by
+   * `SetContextDocsBody`'s `SpecPath` refine at the route boundary — never
+   * trust that alone; the run-time read path (Step 5) re-guards again before
+   * every `readFile`.
+   */
+  async setContextDocs(
+    workspaceId: string,
+    agentId: string,
+    repoId: string,
+    paths: string[],
+  ): Promise<AttachedContextDoc[] | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    await this.repo.setContextDocs(agentId, repoId, paths);
+    return this.getContextDocs(workspaceId, agentId, repoId);
   }
 
   /**

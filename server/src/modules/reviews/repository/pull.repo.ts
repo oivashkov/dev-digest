@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../../../db/client.js';
 import * as t from '../../../db/schema.js';
+import { PrRiskBrief } from '@devdigest/shared';
 import type { Intent } from '@devdigest/shared';
 import type { PullRow } from '../../../db/rows.js';
 
@@ -89,4 +90,33 @@ export async function getIntent(db: Db, prId: string): Promise<Intent | undefine
     source: row.source as Intent['source'],
     plan_refs: row.planRefs,
   };
+}
+
+// ---- risk brief -------------------------------------------------------------
+
+/**
+ * `pr_brief.json` (`server/src/db/schema/reviews.ts:93-97`) holds the WHOLE
+ * `PrRiskBrief` object — including `pr_id` and `head_sha` (OQ4) — as one
+ * jsonb blob, unlike `pr_intent`'s individually-typed columns. No migration:
+ * the table and column already exist.
+ */
+export async function upsertPrBrief(db: Db, prId: string, brief: PrRiskBrief): Promise<void> {
+  await db
+    .insert(t.prBrief)
+    .values({ prId, json: brief })
+    .onConflictDoUpdate({
+      target: t.prBrief.prId,
+      set: { json: brief },
+    });
+}
+
+export async function getPrBrief(db: Db, prId: string): Promise<PrRiskBrief | undefined> {
+  const [row] = await db.select().from(t.prBrief).where(eq(t.prBrief.prId, prId));
+  if (!row) return undefined;
+  // `json` is untyped jsonb — there is no `$type<>` compile-time guarantee the
+  // blob still matches `PrRiskBrief` (a malformed/legacy row must degrade to
+  // `undefined`, not throw — root `INSIGHTS.md` 2026-08-23's silent-drift
+  // warning is exactly this case).
+  const parsed = PrRiskBrief.safeParse(row.json);
+  return parsed.success ? parsed.data : undefined;
 }

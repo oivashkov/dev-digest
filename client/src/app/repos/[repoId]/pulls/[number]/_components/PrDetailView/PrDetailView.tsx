@@ -27,6 +27,9 @@ import { PrDetailHeader } from "../PrDetailHeader";
 import { OverviewTab } from "../OverviewTab";
 import { FindingsTab } from "../FindingsTab";
 import { DiffTab } from "../DiffTab";
+// `SmartDiffViewer`'s `index.ts` barrel only exports the component, not this
+// type — same barrel-bypass import `FindingsTab.tsx` uses for `RunHistory`.
+import type { ScrollTarget } from "../SmartDiffViewer/SmartDiffViewer";
 import RunTraceDrawer from "../RunTraceDrawer";
 import { s } from "./styles";
 
@@ -73,6 +76,18 @@ export function PrDetailView() {
     router.replace(`/repos/${repoId}/pulls/${number}${sp.toString() ? `?${sp.toString()}` : ""}`);
   };
   const setTab = (t: string) => setParam("tab", t);
+
+  // A `review_focus[]` click on the Overview tab (PrBriefCard) jumps to the
+  // Files-changed tab and scrolls the cited file/line — transient component
+  // state, not a `?file=&line=` query param, so a repeat click on the same
+  // item (bumped nonce) still re-triggers even though the URL wouldn't
+  // change (`router.replace` to an identical URL is a no-op). No AC requires
+  // this jump to be deep-linkable/survive a reload.
+  const [focusTarget, setFocusTarget] = React.useState<ScrollTarget | null>(null);
+  const handleOpenFile = (file: string, line?: number) => {
+    setFocusTarget((prev) => ({ path: file, line, n: (prev?.n ?? 0) + 1 }));
+    setTab("diff");
+  };
 
   // Reviews come newest-first; each is its own run (grouped into accordions).
   const runs = reviews ?? [];
@@ -154,6 +169,7 @@ export function PrDetailView() {
             repoProvider={repoProvider}
             repoHost={repoHost}
             headSha={pr.head_sha}
+            onOpenFile={handleOpenFile}
           />
         )}
 
@@ -194,6 +210,7 @@ export function PrDetailView() {
             repoProvider={repoProvider}
             repoHost={repoHost}
             headSha={pr.head_sha}
+            focusTarget={focusTarget}
           />
         )}
       </div>

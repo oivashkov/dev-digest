@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../../db/client.js';
 import * as t from '../../db/schema.js';
 import type { SkillSource, SkillType } from '@devdigest/shared';
@@ -201,5 +201,42 @@ export class SkillsRepository {
       .from(t.findings)
       .innerJoin(t.reviews, eq(t.reviews.id, t.findings.reviewId))
       .where(inArray(t.findings.reviewId, reviewIds));
+  }
+
+  // ---- skill_context_docs (Project Context attachments, SPEC-01) ----------
+
+  /** Attached context-document paths for a skill, scoped to one repo, sorted
+   *  by NORMALIZED PATH (not the stored `order` column) — no reorder control
+   *  in the Skill editor (Q13); position in the final prompt is decided
+   *  entirely by the agent's composition rule. */
+  async contextDocs(skillId: string, repoId: string): Promise<{ path: string; order: number }[]> {
+    const rows = await this.db
+      .select({ path: t.skillContextDocs.path, order: t.skillContextDocs.order })
+      .from(t.skillContextDocs)
+      .where(and(eq(t.skillContextDocs.skillId, skillId), eq(t.skillContextDocs.repoId, repoId)));
+    return rows.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  /** Full-replace the attached context-document set for a skill, scoped to
+   *  `repoId`. Same `.onConflictDoUpdate` full-replace shape as
+   *  `AgentsRepository.setContextDocs`/`setSkills` — a bare transaction alone
+   *  is not sufficient for two concurrent calls (`server/INSIGHTS.md`,
+   *  2026-08-12). `order` is stored but not user-meaningful (Q13) — assigned
+   *  as submission index purely as a stable tiebreaker. */
+  async setContextDocs(skillId: string, repoId: string, paths: string[]): Promise<void> {
+    const uniquePaths = [...new Set(paths)];
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(t.skillContextDocs)
+        .where(and(eq(t.skillContextDocs.skillId, skillId), eq(t.skillContextDocs.repoId, repoId)));
+      if (uniquePaths.length === 0) return;
+      await tx
+        .insert(t.skillContextDocs)
+        .values(uniquePaths.map((path, i) => ({ skillId, repoId, path, order: i })))
+        .onConflictDoUpdate({
+          target: [t.skillContextDocs.skillId, t.skillContextDocs.repoId, t.skillContextDocs.path],
+          set: { order: sql`excluded."order"` },
+        });
+    });
   }
 }

@@ -23,6 +23,18 @@ export const NAV: NavGroup[] = [
     section: "WORKSPACE",
     items: [
       { key: "pulls", label: "Pull Requests", icon: "GitPullRequest", href: "/repos/:repoId/pulls", gKey: "p" },
+      {
+        key: "onboarding-tour",
+        label: "Onboarding Tour",
+        icon: "Workflow",
+        href: "/repos/:repoId/onboarding",
+      },
+      {
+        key: "context",
+        label: "Project Context",
+        icon: "FileText",
+        href: "/repos/:repoId/context",
+      },
     ],
   },
   {

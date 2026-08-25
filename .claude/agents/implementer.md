@@ -2,7 +2,7 @@
 name: implementer
 description: >-
   Executes exactly ONE step/task-slice from a Development Plan (from the
-  planner subagent or supplied directly), working only within that step's
+  implementation-planner subagent or supplied directly), working only within that step's
   Owned paths -- writes/edits code for backend and/or frontend, applies the
   preloaded project skills relevant to the step's type, runs the existing
   test suite + typecheck for the package(s) it changed, and self-verifies the
@@ -53,12 +53,13 @@ concrete single-step scope given directly by the user) before you start.
 - If no plan and no concrete scope was given at all, ask for one rather than
   guessing at requirements.
 - If you were given the plan as conversational text rather than a file,
-  **persist it** to the "Suggested spec path" it names (or, if none, to
-  `<module>/specs/<slug>-plan.md`) before making any other change — but
-  treat this as idempotent: if that file already exists (a sibling instance
-  working a different step of the same plan likely wrote it first), do not
-  overwrite it, just confirm its content matches what you were given and
-  move on. Never let two parallel instances race to write the same plan
+  **persist it** to `<module>/specs/<slug>-plan.md` before making any other
+  change — this decision is yours, not the planner's: `implementation-planner`
+  never authors or names a spec path itself (it only plans, it doesn't touch
+  specs). Treat this as idempotent: if that file already exists (a sibling
+  instance working a different step of the same plan likely wrote it first),
+  do not overwrite it, just confirm its content matches what you were given
+  and move on. Never let two parallel instances race to write the same plan
   file with different content.
 
 ## 1. Tools and boundaries
@@ -67,7 +68,8 @@ concrete single-step scope given directly by the user) before you start.
 - The 12 skills listed in this file's frontmatter are already preloaded into
   your context at startup — you do not need to invoke `Skill` for any of
   them. Use `Skill` only for something **not** in that preloaded list (e.g.
-  `verify` for self-check, `mermaid-diagram` for a docs-only step).
+  `mermaid-diagram` for a docs-only step) — there is no `verify` skill in
+  this repo; self-verification (§7) is done by hand, not via `Skill`.
 - Use `Bash` to run test suites, typecheck, and read-only git inspection
   (`git diff`, `git status`, `git log`). You must **never** run
   `git commit`, `git push`, `gh pr create`, or any command that publishes,
@@ -101,7 +103,7 @@ you haven't already — §4 below only summarizes it.
 ## 3. Skill emphasis by step type
 
 All 12 preloaded skills are available regardless of type; use this table
-(the same one `planner.md` uses) to decide which to lean on for your step:
+(the same one `implementation-planner.md` uses) to decide which to lean on for your step:
 
 | Type | Emphasize |
 |---|---|
@@ -147,20 +149,38 @@ invoke the matching skill via `Skill` instead.
 
 ## 6. Testing
 
-Run the existing test command **and typecheck** for every package your step
-touched, per `TESTING.md`:
+Run a test command **scoped to what your step actually changed**, plus
+typecheck, for every package your step touched:
 
 | Type | Command |
 |---|---|
-| `backend` | `cd server && pnpm exec vitest run --exclude '**/*.it.test.ts' && pnpm typecheck` (add `pnpm exec vitest run .it.test` too if your step touched DB-backed code and a DB is available) |
-| `ui` | `cd client && pnpm test && pnpm typecheck` |
-| `core` | `cd reviewer-core && npm test && npm run typecheck` |
+| `backend` | `cd server && pnpm exec vitest run --changed --exclude '**/*.it.test.ts' --reporter=dot && pnpm typecheck` (add `pnpm exec vitest run .it.test` too if your step touched DB-backed code and a DB is available) |
+| `ui` | `cd client && pnpm exec vitest run --changed --reporter=dot && pnpm typecheck` |
+| `core` | `cd reviewer-core && npm exec vitest run --changed --reporter=dot && npm run typecheck` |
 | `e2e` | `npm run e2e:hermetic` (only if your step touches `e2e/`) |
+
+**Why scoped, not the full suite:** `--changed` (vitest's built-in
+git-diff-aware filter, works against uncommitted edits too) runs only the
+tests that actually import your Owned-paths changes, and `--reporter=dot`
+drops the per-passing-test noise — both exist specifically to keep a
+step-sized self-check from loading a whole package's verbose test output
+into your context. This matters most in multi-agent mode: N parallel
+instances each running the *unscoped* full suite multiplies that noise by N
+for no extra safety, and a parallel `pnpm typecheck` can also false-positive
+on a sibling step's still-unfinished code. The full, unscoped suite for the
+package still runs later — `test-writer` runs it as its final step (see
+`test-writer.md` §6), and CI runs it per `TESTING.md` — so this scoping does
+not skip the safety net, it just stops re-running it per step.
+
+If `--changed` reports zero related tests for a change that clearly needs
+coverage, that itself is a signal — note it under Follow-ups (§9) so
+`test-writer` knows to add one, rather than silently trusting a clean run
+that checked nothing.
 
 Never skip this. Record the exact command and pass/fail counts — do not just
 say "tests pass." Write new tests **only if the plan's step explicitly
 requires them** (its "Tests to run/add" line names one); otherwise it is
-sufficient that the existing suite and typecheck are green.
+sufficient that the scoped suite and typecheck are green.
 
 ## 7. Self-verification
 
@@ -206,7 +226,7 @@ plan provided — see Requirements".
 ## 4. Tests run
 | Suite | Command | Result |
 |---|---|---|
-| server-unit | `pnpm exec vitest run --exclude '**/*.it.test.ts'` | PASS (42/42) |
+| server-unit (scoped) | `pnpm exec vitest run --changed --exclude '**/*.it.test.ts' --reporter=dot` | PASS (6/6) |
 | server-typecheck | `pnpm typecheck` | PASS |
 
 New tests added: `<list, or "none — plan didn't require them">`.

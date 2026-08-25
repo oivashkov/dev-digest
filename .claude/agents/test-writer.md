@@ -71,9 +71,9 @@ be thorough.
 - Never touch `server/src/vendor/**` or `client/src/vendor/**`, lockfiles, or
   `node_modules`.
 - The 4 skills listed in this file's frontmatter are already preloaded into
-  your context at startup — you do not need to invoke `Skill` for them. Use
-  `Skill` only for something not in that list (e.g. `verify` to self-check a
-  change end-to-end).
+  your context at startup — you do not need to invoke `Skill` for them —
+  there is no `verify` skill in this repo; self-check is running the suite
+  itself (§6).
 
 ## 2. Read insights first
 
