@@ -3,7 +3,7 @@
 One file per UI feature: `NN-feature-name.md`. If it also needs a new endpoint,
 put the spec in the root `../../specs/` so both sides stay in one document.
 
-Authored by the `specreator` subagent (`.claude/agents/specreator.md`) or
+Authored by the `spec-creator` subagent (`.claude/agents/spec-creator.md`) or
 directly by hand. Uses the repo-wide template — see the root
 `../../specs/README.md` for the full shape, the EARS acceptance-criteria
 convention, and the `Status`/`Supersedes` lifecycle:
@@ -28,5 +28,5 @@ Supersedes: <path, or "none">
 Module-specific things a client spec's Acceptance criteria / Edge cases should
 account for: which `src/app/**/page.tsx` route(s) it needs, which hook in
 `src/lib/hooks` (and endpoint) supplies its data, every UI state
-(loading/empty/error/success — `specreator` checks pasted screenshots against
+(loading/empty/error/success — `spec-creator` checks pasted screenshots against
 this list), and which `messages/<locale>/*.json` keys it adds.

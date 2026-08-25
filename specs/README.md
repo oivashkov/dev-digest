@@ -8,7 +8,7 @@ that package's `specs/` instead (`e2e/` is the one exception — see its own
 A spec describes **what to build and why it is done** — not how the code works
 today (that is `docs/`) and not what we already rejected (that is `INSIGHTS.md`).
 
-Authored by the `specreator` subagent (see `.claude/agents/specreator.md`) —
+Authored by the `spec-creator` subagent (see `.claude/agents/spec-creator.md`) —
 give it a feature name, which package(s) it touches, and whatever design
 sources exist (screenshots pasted into the conversation, a text description, a
 Figma link, an existing page/module to read as the baseline). It analyzes those
@@ -41,9 +41,9 @@ Supersedes: <path to specs/NN-old-feature.md, or "none">
 (this one is its own sequence, separate from any module's) — the slug is
 there so the ID alone is recognizable without opening the file. A spec starts at `Status: draft`; only a human
 promotes it to `approved` (agreed to build) or `implemented` (shipped) —
-`specreator` never sets either itself. When a new spec replaces a decision an
+`spec-creator` never sets either itself. When a new spec replaces a decision an
 older one made, set the new file's `Supersedes:` and add a one-line pointer at
-the top of the old file rather than rewriting it — see `specreator.md` §8.
+the top of the old file rather than rewriting it — see `spec-creator.md` §8.
 
 **Acceptance criteria use EARS**, with triggers written bilingually and
 `shall` kept bracketed as the mandatory-requirement marker:

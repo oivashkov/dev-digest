@@ -4,7 +4,7 @@
 
 The full SDD pipeline documented in `.claude/agents/README.md` has eight
 agents. Running all of them for every change is expensive — two
-(`specreator`, `implementation-planner`) run on `opus` and require a human
+(`spec-creator`, `implementation-planner`) run on `opus` and require a human
 round of clarifying questions before their output is trustworthy;
 `test-writer` adds a full write-plus-run cycle on top of `implementer`'s
 own. Most of the time, the spec and the plan are produced once, reviewed by
@@ -15,7 +15,7 @@ pipeline and driven by a structured invocation
 
 ## Decisions and why
 
-- **`specreator` and `implementation-planner` excluded entirely.** Both are
+- **`spec-creator` and `implementation-planner` excluded entirely.** Both are
   `opus` and both require a human round of clarifying questions/approval
   before their output is trustworthy — folding them into an unattended
   skill would either force it to guess at answers a human should give, or
@@ -30,7 +30,7 @@ pipeline and driven by a structured invocation
 - **`architecture-reviewer` and `plan-verifier` needed no model change.**
   Both are already `model: sonnet` in their own frontmatter — the cost
   concern that prompted this skill (opus spend) was already fully addressed
-  by excluding `specreator`/`implementation-planner`, not by touching these
+  by excluding `spec-creator`/`implementation-planner`, not by touching these
   two.
 - **`plan-verifier` runs in parallel with `architecture-reviewer` from round
   0, and again after every fix round — but never drives the fix loop

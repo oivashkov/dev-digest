@@ -2,7 +2,7 @@
 
 Візуальний супровід до [README.md](README.md) — сам текст правил тут не
 дублюється, лише три діаграми, на які README посилається: основний конвеєр
-(`specreator → researcher → implementation-planner → implementer`),
+(`spec-creator → researcher → implementation-planner → implementer`),
 пост-імплементаційні ворота й автори документації (чотири нові агенти), і
 Type→Skills.
 
@@ -18,7 +18,7 @@ Type→Skills.
 
 ```mermaid
 flowchart LR
-  S["specreator<br/>(write: лише specs/, opus)"]
+  S["spec-creator<br/>(write: лише specs/, opus)"]
   R["researcher<br/>(read-only + web)"]
   P["implementation-planner<br/>(read-only, opus)"]
   I1["implementer #1<br/>Owned paths A"]
@@ -32,8 +32,8 @@ flowchart LR
   P -. "Open questions<br/>(зовнішня невідомість)" .-> R
 ```
 
-`specreator` та `researcher` не мають преднавантажених скілів у Type-таблиці
-сенсі (`specreator` преднавантажує лише `engineering-insights`/
+`spec-creator` та `researcher` не мають преднавантажених скілів у Type-таблиці
+сенсі (`spec-creator` преднавантажує лише `engineering-insights`/
 `mermaid-diagram`/`security` напряму через frontmatter `skills:`, не через
 Type); `researcher` читає `specs/`/`docs/`/`INSIGHTS.md` напряму і має
 `WebFetch`/`WebSearch`, яких немає в жодного іншого агента з восьми.
