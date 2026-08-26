@@ -16,6 +16,52 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-26 — PR #30 closed the loop: inline severity + cyclic-dependency + gate-verdict fixes, plus `retry: 1`, turned two required-check failures green
+
+**What:** Three rounds of targeted fixes against PR #30's live CI runs
+(`.github/workflows/evals.yml`, same PR that surfaced the DeepSeek
+hallucination below), converging `skill-evals` (required) from red to
+green and `agent-evals` from 8/18 + 1/9 to 12/18 + 4/9 (non-blocking,
+still `continue-on-error`, but no longer near-zero signal):
+1. `dependency-checker/references/report-template.md` — added an explicit
+   `## Scope` section after the title and a closing `## 9. Summary`
+   section; the judge's own two missing-practice complaints
+   (0.667/0.7) named exactly these two structural pieces, and both cases
+   that touched them went to 100% on the next run.
+2. `architecture-reviewer(-lite).md` — inline severity annotations
+   (`hooks-only-data-access` / `vcs-resolution-boundary` = **Warning**,
+   not Critical) directly at the rule statement, not only in the separate
+   severity guide at the very end of the prompt. Confirmed working: the
+   `fetch()`-in-component practice ("classifies... Warning, not Critical")
+   flipped from FAIL to PASS on the very next run.
+3. That same run then surfaced a *new*, more subtle bug the severity fix
+   exposed: the model correctly labeled a finding Warning but still wrote
+   gate verdict **FAIL** — reacting to "a finding exists" instead of "a
+   Critical finding exists", despite §4 already stating the rule
+   explicitly. Fixed with a counter-example plus an explicit
+   "re-scan §3 for Criticals specifically before writing this line"
+   instruction — the next run's `fetch()` case gate verdict flipped PASS.
+4. `evals/vitest.config.ts` — `retry: 1`, added after `skill-evals`
+   (required, blocking) failed on nothing but a 240s `testTimeout` against
+   `deepseek/deepseek-v4-flash` while its two sibling cases in the same
+   job passed cleanly — plain network/rate-limit flakiness on a real
+   external LLM call, not a content regression. The very next push's
+   `skill-evals` run went green.
+**Why:** each fix targeted the SPECIFIC judge/assertion complaint from the
+prior live run rather than a guessed generic improvement — the fast
+loop (push -> real CI run -> read the exact failing practice's evidence
+field -> fix that one thing) is what surfaced #3 at all; a
+guess-and-batch approach would likely have "fixed" severity and stopped,
+missing the gate-verdict inconsistency entirely.
+**Open question:** `architecture-reviewer`'s cyclic-dependency case still
+only cites one side of the two-file cycle despite the same "cite both
+sides" instruction added to both variants — the model's response for that
+specific fixture is suspiciously short (233 output tokens for a full
+review), suggesting it may be truncating its own analysis for a small diff
+rather than ignoring the instruction. Not chased further this round: the
+job is non-blocking and pass rate is still trending up overall (8→11→12
+on `architecture-reviewer`).
+
 ### 2026-08-26 — `agent-evals` moved off DeepSeek to `google/gemini-2.5-flash`: first live run showed hallucinated absolute file paths, not a partial quality gap
 
 **What:** `.github/workflows/evals.yml`'s `agent-evals` job's default
