@@ -5,12 +5,18 @@ import type { WorkflowCase } from "../src/index.js";
  * loaded via settingSources:["project"]) behaves as documented. Organized by scenario, not by a
  * single artifact, because these behaviors are cross-cutting.
  *
- * Budget: 5 Claude sessions total.
+ * Budget: 9 Claude sessions total.
  *   - 3 × trace     → 1 session each                      = 3
  *   - 1 × activation pair (positive + near-miss negative) = 2
+ *   - 2 × dispatch  → 1 session each, stops the moment the
+ *                     subagent launches                   = 2
+ *   - 2 × activation (positive only — the near-miss-negative
+ *                     discipline above already covers the
+ *                     mechanism; not repeated per skill)   = 2
  *
  * `trace` folds several assertions into ONE session (cheaper, coarser) and stops early once its
  * evidence is in — so a dispatch-bearing trace never waits out the nested subagent's full run.
+ * `dispatch` does the same for a single subagent-launch assertion.
  */
 export const cases: WorkflowCase[] = [
   // --- trace (1 session): CLAUDE.md "Read When" routing + subagent dispatch, together -----------
@@ -75,6 +81,44 @@ export const cases: WorkflowCase[] = [
       "Поясни, як у pgvector працюють розмірності колонок і чому невідповідність повертає нуль рядків.",
     skill: "engineering-insights",
     shouldActivate: false,
+    maxTurns: 4,
+  },
+
+  // --- dispatch (1 session each): explicit subagent requests, stop the moment it launches -------
+  {
+    kind: "dispatch",
+    name: "test-writer request dispatches the test-writer subagent",
+    prompt:
+      "Хочу додати тести для модуля server/src/modules/onboarding. ОБОВ'ЯЗКОВО делегуй це " +
+      "сабагенту test-writer — не пиши тести сам.",
+    expectSubagent: "test-writer",
+    maxTurns: 6,
+  },
+  {
+    kind: "dispatch",
+    name: "implementation-plan request dispatches the implementation-planner subagent",
+    prompt:
+      "Треба скласти implementation plan під нові вимоги для GET /reviews/:id/export. " +
+      "ОБОВ'ЯЗКОВО запусти сабагента implementation-planner — не плануй сам.",
+    expectSubagent: "implementation-planner",
+    maxTurns: 6,
+  },
+
+  // --- activation (1 session each, positive only) -------------------------------------------------
+  {
+    kind: "activation",
+    name: "backend-onion-architecture activates on a server layering question",
+    prompt: "Де має жити бізнес-логіка для нового серверного модуля — в service.ts чи repository.ts?",
+    skill: "backend-onion-architecture",
+    shouldActivate: true,
+    maxTurns: 4,
+  },
+  {
+    kind: "activation",
+    name: "fastify-best-practices activates on a new API-route question",
+    prompt: "Додаю нову API-route в Fastify для GET /widgets — як правильно оголосити Zod-схему валідації запиту?",
+    skill: "fastify-best-practices",
+    shouldActivate: true,
     maxTurns: 4,
   },
 ];

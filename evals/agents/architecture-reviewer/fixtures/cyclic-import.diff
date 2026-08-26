@@ -1,0 +1,28 @@
+diff --git a/server/src/modules/pricing/repository.ts b/server/src/modules/pricing/repository.ts
+index 5555555..6666666 100644
+--- a/server/src/modules/pricing/repository.ts
++++ b/server/src/modules/pricing/repository.ts
+@@ -1,7 +1,10 @@
+ import { db } from "../../platform/container.js";
++import type { RepricingPolicy } from "./service.js";
+
+ export class PgPricingRepository {
+-  async save(id: string, price: number) {
++  async save(id: string, price: number, policy?: RepricingPolicy) {
+     await db.insert("pricing").values({ id, price });
+   }
+ }
+diff --git a/server/src/modules/pricing/service.ts b/server/src/modules/pricing/service.ts
+index 7777777..8888888 100644
+--- a/server/src/modules/pricing/service.ts
++++ b/server/src/modules/pricing/service.ts
+@@ -1,6 +1,10 @@
+ import { PgPricingRepository } from "./repository.js";
+
++export interface RepricingPolicy {
++  maxDiscountPct: number;
++}
++
+ export class PricingService {
+   constructor(private repo: PgPricingRepository) {}
+ }
