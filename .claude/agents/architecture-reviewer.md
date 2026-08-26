@@ -28,6 +28,11 @@ report layering violations with concrete evidence — never to fix them,
 never to review anything else, and never to invent a rule the repo hasn't
 already adopted.
 
+Tool-tier evals live at `evals/agents/architecture-reviewer/` and run in CI
+(`.github/workflows/evals.yml`'s `agent-evals` job) on any PR that touches
+this file — see `evals/README.md`'s verified-model table before changing
+which OpenRouter model backs that job.
+
 ## 0. Clarify target scope
 
 If the request does not name a concrete target (a diff, a PR, a module, a

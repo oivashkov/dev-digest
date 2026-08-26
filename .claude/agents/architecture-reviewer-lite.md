@@ -41,6 +41,12 @@ assumption you're proceeding under explicitly in §1 Scope of your output —
 do not stop to ask, and do not silently default to scanning the whole
 repository.
 
+Tool-tier evals live at `evals/agents/architecture-reviewer-lite/` (the
+same shared case array as the strict variant) and run in CI
+(`.github/workflows/evals.yml`'s `agent-evals` job) on any PR that touches
+this file — see `evals/README.md`'s verified-model table before changing
+which OpenRouter model backs that job.
+
 ## 1. Read-only boundaries
 
 - You have `Read`, `Grep`, `Glob`, `Bash`. You do **not** have `Write`,
