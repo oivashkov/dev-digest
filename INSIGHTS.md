@@ -68,6 +68,26 @@ it. Verify the slug on `openrouter.ai/models` and consider rerunning
 `agent-evals`/`workflow-evals` once against `v4-flash` to confirm the
 dispatch behavior transferred — it's a one-line repo Variable either way.
 
+### 2026-08-26 — Strict/lite agent A/B keeps identical eval cases; "lite forgets" lives only in the agent prompt
+
+**What:** `architecture-reviewer-lite` (`.claude/agents/architecture-reviewer-lite.md`)
+runs the exact same shared case array as `architecture-reviewer`
+(`evals/agents/architecture-reviewer/architecture-reviewer.cases.ts`) — no
+case is skipped or written lite-only. The three things lite "forgets" (§0
+clarify-target-scope, the rule-slug citation requirement added in this
+session, repo-wide cyclic-dependency/duplicate-functionality search) are all
+instruction drops inside the `.md` prompt itself, never a difference in
+which cases run.
+**Why:** `evals/README.md`'s own controlled-A/B design ("same fixture, same
+practices, same threshold... `eval:delta` shows exactly which practice
+moved") only produces a real per-practice delta when both sides run the
+identical case; a case that only exists for one variant produces
+`missing_data`, not a comparison.
+**Rejected:** having lite skip some cases outright (e.g. no ambiguous-target
+case, no cyclic-dependency case) to "save budget" — raised as the first
+instinct, but it breaks `eval:delta`'s per-practice matrix and defeats the
+reason this package favors shared cases in the first place.
+
 ### 2026-08-25 — Renamed the `specreator` subagent to `spec-creator`
 
 **What:** `.claude/agents/specreator.md` → `.claude/agents/spec-creator.md`
@@ -348,6 +368,18 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-26** — An eval case file (`*.cases.ts`) can encode assumptions
+  about a subagent's behavior that the subagent's own `.md` prompt never
+  actually states. `evals/agents/architecture-reviewer/architecture-reviewer.cases.ts`
+  had 4 cases already asserting a slug-style rule identifier
+  (`inward-only-dependencies`, `di-discipline`, `reviewer-core-zero-io`,
+  `reviewer-core-ground-findings-gate`) and an "explicit PASS/FAIL gate
+  verdict" — neither the strings, nor any gate-verdict output section,
+  existed anywhere in `.claude/agents/architecture-reviewer.md` (confirmed
+  by `grep`, zero hits) before this session added them. Before trusting an
+  inherited case file's practices, grep the artifact itself for the exact
+  terms the practices name.
+
 - **2026-08-24** — Amending an **already-approved, already-implemented**
   spec (`specs/03-pr-why-risk-brief.md`, adding the 8k-token prompt budget)
   is append-only: new acceptance criteria get the next free numbers
@@ -480,6 +512,41 @@ _None yet._
 
 ## Tool & Library Notes
 
+- **2026-08-26** — `WorkflowCase`'s `expectFilesRead` (`evals/src/dsl/case.ts`)
+  matches by substring (`actualPath.includes(target)`), so a bare filename
+  like `"INSIGHTS.md"` matches every package's copy, not just the one
+  intended — `"server/INSIGHTS.md".includes("INSIGHTS.md")` is `true`. To
+  assert the ROOT file specifically, the target string needs the parent
+  directory immediately before the filename with no intervening package
+  segment, e.g. `"dev-digest/INSIGHTS.md"` (repo folder name + filename) —
+  the shortest substring still unique to the root copy.
+  `evals/workflow/nested-config-routing.cases.ts`.
+
+- **2026-08-26** — Sizing a pnpm-managed `node_modules/<dep>` with `du` needs
+  a *one-level* symlink resolution, not a blanket `-L`. First cut: plain
+  `du -sk node_modules/<dep>` silently reports **~0 bytes** for any
+  pnpm-managed package (`server/`, `client/`, `evals/` — see `AGENTS.md`'s
+  pnpm/npm split), because pnpm links `node_modules/<dep>` into its
+  content-addressed store and `du` without `-L` measures only the symlink
+  itself. **`du -skL` looked like the fix but is wrong**: pnpm's store
+  packages nest their *own* dependencies as further symlinks too (e.g.
+  `client/node_modules/next`'s resolved dir has `node_modules/{react,
+  postcss,styled-jsx,...}` as symlinks back into the store) — `-L` follows
+  those recursively, so one top-level dependency's reported size silently
+  includes its whole transitive tree. Confirmed on `client/`: real
+  `du -sh node_modules` = 620 MB, `du -shL node_modules` = 1.8 GB — a ~3x
+  overcount, not a rounding error, and it surfaced only when a
+  `dependency-checker` skill eval run cross-checked the script's number
+  against a plain manual `du -sh`. **Working fix:** resolve only the single
+  symlink at `node_modules/<dep>` via `fs.realpathSync`, then run plain
+  `du -sk` (no `-L`) on that resolved directory — reports the package's own
+  installed content once, matching how npm's real (non-symlinked) hoisted
+  directories already behave, without re-descending into whatever it links
+  to internally. Also confirmed while building the same tool: both
+  `npm`/`pnpm outdated --json` and `audit --json` exit non-zero whenever
+  they find something to report — that is expected, not a failure signal,
+  so parse `stdout` regardless of exit code rather than gating on it.
+  `.claude/skills/dependency-checker/scripts/collect-deps.mjs`
 - **2026-08-23** — The `<total_tokens>N tokens left</total_tokens>` system
   reminder attached to tool results is **not** a monotonically-decreasing
   usage counter — it can jump back up between turns (context summarization/

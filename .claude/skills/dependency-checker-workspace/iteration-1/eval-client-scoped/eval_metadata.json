@@ -1,0 +1,12 @@
+{
+  "eval_id": 1,
+  "eval_name": "client-scoped",
+  "prompt": "Наскільки важкий client/ і чи є там застарілі або вразливі пакети?",
+  "assertions": [
+    "Response is scoped to client/ only, not padded with unrelated full-repo analysis",
+    "Response reports an actual installed size figure for client/ (real du-derived number, not an estimate)",
+    "Response lists specific outdated dependencies with current vs latest versions, not just 'some packages are outdated'",
+    "Response lists specific vulnerable dependencies with severity, not just 'run npm audit yourself'",
+    "Response output is structured (tables/lists) rather than a prose wall"
+  ]
+}

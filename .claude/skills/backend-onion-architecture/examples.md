@@ -127,6 +127,74 @@ import { GitHubAdapter } from '../../adapters/github/octokit.js';
 const gh = new GitHubAdapter(token); // provider hardcoded, container bypassed
 ```
 
+## Adapters called from `repository.ts`, not just from routes
+
+**Bad** — the data-access layer reaches into an adapter to verify something
+before it writes, instead of that verification happening upstream in the
+service:
+
+```ts
+// repository.ts — bad
+import { verifySignature } from '../../adapters/webhooks/hmac.js';
+
+export class WebhookRepository {
+  async markProcessed(secret: string, rawBody: string, sig: string, id: string) {
+    if (!verifySignature(secret, rawBody, sig)) return false; // adapter call from repo
+    return this.db.update(t.webhookEvents).set({ processed: true }).where(eq(t.webhookEvents.id, id));
+  }
+}
+```
+
+**Good** — the service verifies (via the adapter, through the container)
+first, and the repository only ever sees a plain, already-validated write:
+
+```ts
+// service.ts — good
+async ack(id: string, secret: string, rawBody: string, sig: string) {
+  if (!this.container.webhooks.verifySignature(secret, rawBody, sig)) return { ok: false };
+  await this.repo.markProcessed(id);
+  return { ok: true };
+}
+
+// repository.ts — good
+async markProcessed(id: string) {
+  return this.db.update(t.webhookEvents).set({ processed: true }).where(eq(t.webhookEvents.id, id));
+}
+```
+
+## Business decisions leaking into an adapter
+
+**Bad** — the adapter does more than translate/verify: it decides a business
+outcome from a domain threshold.
+
+```ts
+// adapters/webhooks/hmac.ts — bad
+const AUTO_CLOSE_CONFIDENCE = 0.9;
+
+export function decideAction(payload: WebhookPayload) {
+  if (payload.event !== 'pull_request') return 'ignore';
+  if (payload.confidence >= AUTO_CLOSE_CONFIDENCE) return 'auto_close'; // business rule, wrong layer
+  return 'flag_for_review';
+}
+```
+
+**Good** — the adapter stays limited to verification/translation; the
+decision moves to `service.ts` (or `constants.ts` + `helpers.ts`) where the
+rest of the module's business rules already live:
+
+```ts
+// adapters/webhooks/hmac.ts — good
+export function verifySignature(secret: string, rawBody: string, sig: string): boolean { /* ... */ }
+
+// service.ts — good
+import { AUTO_CLOSE_CONFIDENCE } from './constants.js';
+
+decideAction(payload: WebhookPayload) {
+  if (payload.event !== 'pull_request') return 'ignore';
+  return payload.confidence >= AUTO_CLOSE_CONFIDENCE ? 'auto_close' : 'flag_for_review';
+}
+```
+
 ## Dependency inversion: never import "outward"
 
 **Bad** — a repository reaching back into a service (inverts the

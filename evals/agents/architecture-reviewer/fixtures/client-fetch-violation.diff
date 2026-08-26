@@ -1,0 +1,30 @@
+diff --git a/client/src/app/reviews/_components/ReviewList/ReviewList.tsx b/client/src/app/reviews/_components/ReviewList/ReviewList.tsx
+index 1010101..2020202 100644
+--- a/client/src/app/reviews/_components/ReviewList/ReviewList.tsx
++++ b/client/src/app/reviews/_components/ReviewList/ReviewList.tsx
+@@ -1,8 +1,17 @@
+ import { useState, useEffect } from "react";
++import { NEXT_PUBLIC_API_BASE } from "../../../../lib/config.js";
+
++interface Review {
++  id: string;
++}
++
+ export function ReviewList({ repoId }: { repoId: string }) {
+-  const [reviews, setReviews] = useState([]);
++  const [reviews, setReviews] = useState<Review[]>([]);
++
++  useEffect(() => {
++    fetch(`${NEXT_PUBLIC_API_BASE}/repos/${repoId}/reviews`)
++      .then((res) => res.json())
++      .then(setReviews);
++  }, [repoId]);
+
+   return (
+     <ul>
+       {reviews.map((r) => (
+         <li key={r.id}>{r.id}</li>
+       ))}
+     </ul>
+   );
+ }

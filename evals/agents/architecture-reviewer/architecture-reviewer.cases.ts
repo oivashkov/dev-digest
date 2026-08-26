@@ -27,6 +27,50 @@ const BENIGN_PROMPT = `Audit this diff against DevDigest's documented structural
 
 ${fx("benign-refactor.diff")}`;
 
+// Client-side skip-call: a component calling fetch() directly instead of going through a hook.
+// Fully diff-local (both the violating line and its context sit in the one hunk) — no repo-wide
+// search needed to catch it, so this is NOT expected to discriminate strict vs lite; both variants
+// should flag it identically, just without (lite) / with (strict) the `hooks-only-data-access` slug.
+const CLIENT_FETCH_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
+
+${fx("client-fetch-violation.diff")}`;
+
+// A two-file import cycle where BOTH sides of the cycle are visible in the diff itself: the new
+// `+import type { RepricingPolicy } from "./service.js"` line in repository.ts, and service.ts's
+// own (unchanged, pre-existing) `import { PgPricingRepository } from "./repository.js"` context
+// line. Since both edges are readable straight off the diff text, this does NOT need the
+// repo-wide trace lite is scoped out of — NOT expected to discriminate strict vs lite.
+const CYCLIC_IMPORT_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
+
+${fx("cyclic-import.diff")}`;
+
+// A NEW ad-hoc VCS resolver (`resolveVcsClient`) that duplicates the REAL, already-existing
+// `container.vcsFor(repo)` pattern (genuine call sites at server/src/modules/pulls/service.ts and
+// server/src/modules/polling/routes.ts — grep-able in this actual repo, unlike the fictional
+// module the diff itself lives in). This is the one fixture where "go verify this is really a
+// duplicate, not just a lookalike" costs a real repo-wide Grep — exactly what architecture-reviewer-lite's
+// scope note says it is not required to spend. Expected to (softly) discriminate: strict is more
+// likely to cite a real existing call site as corroborating evidence; lite may defer that specific
+// evidence to "Could not confirm" instead, per its own scope note.
+const DUPLICATE_FUNCTIONALITY_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
+
+${fx("duplicate-functionality.diff")}`;
+
+// A NEW (not the already-known settings/routes.ts:96) direct container.github() call — Warning
+// per the severity guide's own example, no Critical finding anywhere in the diff. Tests the gate
+// verdict logic added to §6/§4 specifically: one non-blocking finding must still gate PASS. NOT
+// expected to discriminate strict vs lite — the gate rule itself is identical in both variants.
+const MIXED_SEVERITY_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
+
+${fx("mixed-severity-gate.diff")}`;
+
+// No diff at all — the exact ambiguous phrasing §0 itself uses as an example ("review the
+// server"). The ONLY case in this file designed to diverge on purpose: strict's §0 says ask
+// before starting; architecture-reviewer-lite has §0 removed and is told to proceed with a stated
+// assumption instead. One shared practice, so the split shows up directly in `eval:delta` — expect
+// strict to PASS it and lite to FAIL it, by design, not as a bug in either agent.
+const AMBIGUOUS_TARGET_PROMPT = `Review the server for architectural boundary violations.`;
+
 // Shared across the strict (architecture-reviewer) and relaxed (architecture-reviewer-lite)
 // variants so the two agents are graded on the exact same task — the only thing that should
 // move between the two runs is whether "cites the specific documented rule" keeps passing.
@@ -83,5 +127,67 @@ export const cases: AgentCase[] = [
     ],
     threshold: 1.0,
     maxTurns: 25,
+  },
+  {
+    name: "flags a direct client fetch() call as a hooks-only-data-access violation",
+    kind: "quality",
+    prompt: CLIENT_FETCH_PROMPT,
+    practices: [
+      "flags the `fetch(` call inside ReviewList.tsx's useEffect as a violation of the hooks-only data access rule (all data access must go through a hook in src/lib/hooks/* calling src/lib/api.ts)",
+      "classifies the finding as Warning, not Critical, matching the severity guide's own example (a new fetch() call in a client component instead of a hook)",
+      "quotes the offending `fetch(` line verbatim as evidence",
+      "the final gate verdict is PASS (no Critical finding was reported)",
+    ],
+    threshold: 1.0,
+    maxTurns: 25,
+  },
+  {
+    name: "flags the two-file cyclic dependency between pricing/repository.ts and pricing/service.ts",
+    kind: "quality",
+    prompt: CYCLIC_IMPORT_PROMPT,
+    practices: [
+      "flags a Cyclic dependency between server/src/modules/pricing/repository.ts (new `import type { RepricingPolicy } from \"./service.js\"`) and server/src/modules/pricing/service.ts (which already imports PgPricingRepository from ./repository.js)",
+      "names both file:line locations that together form the cycle, not just one side of it",
+      "quotes the offending import line from repository.ts verbatim as evidence",
+    ],
+    threshold: 1.0,
+    maxTurns: 25,
+  },
+  {
+    name: "flags the new ad-hoc VCS resolver as duplicate functionality beside container.vcsFor",
+    kind: "quality",
+    prompt: DUPLICATE_FUNCTIONALITY_PROMPT,
+    practices: [
+      "flags `resolveVcsClient` in the new vcs-lookup.ts file as duplicate functionality alongside the repo's existing container.vcsFor(repo) resolver",
+      "names at least one real existing call site of container.vcsFor (e.g. server/src/modules/pulls/service.ts or server/src/modules/polling/routes.ts) as evidence this duplicates an existing pattern rather than asserting the duplication only hypothetically",
+      "classifies the finding as Suggestion severity, matching the severity guide (duplicate functionality is Suggestion-level, not Critical)",
+      "the final gate verdict is PASS",
+    ],
+    threshold: 1.0,
+    maxTurns: 25,
+  },
+  {
+    name: "gate verdict is PASS on a Warning-only finding, not just on zero findings",
+    kind: "quality",
+    prompt: MIXED_SEVERITY_PROMPT,
+    practices: [
+      "flags the new `container.github()` call in refund-routes.ts as a violation of the vcs-resolution-boundary rule (VCS access must go through container.vcsFor(repo))",
+      "classifies the finding as Warning, not Critical, matching the severity guide's own example (a new direct container.github() call instead of vcsFor)",
+      "the final gate verdict is PASS despite the reported Warning finding",
+    ],
+    threshold: 1.0,
+    maxTurns: 25,
+  },
+  {
+    // The one intentionally discriminating case in this file (see the prompt's comment above) —
+    // do not be surprised if this case is red for architecture-reviewer-lite; that is the point.
+    name: "asks for scope clarification on an ambiguous, diff-less target",
+    kind: "quality",
+    prompt: AMBIGUOUS_TARGET_PROMPT,
+    practices: [
+      "asks a clarifying question about what to audit (a specific diff/module vs. the whole server/ module) BEFORE producing any findings, rather than proceeding straight to a full audit",
+    ],
+    threshold: 1.0,
+    maxTurns: 10,
   },
 ];

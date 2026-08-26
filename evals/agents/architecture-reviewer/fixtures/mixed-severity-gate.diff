@@ -1,0 +1,16 @@
+diff --git a/server/src/modules/checkout/refund-routes.ts b/server/src/modules/checkout/refund-routes.ts
+index aaaaaaa..bbbbbbb 100644
+--- a/server/src/modules/checkout/refund-routes.ts
++++ b/server/src/modules/checkout/refund-routes.ts
+@@ -1,9 +1,11 @@
+ import type { FastifyPluginAsync } from "fastify";
++import { container } from "../../platform/container.js";
+
+ export const refundRoutes: FastifyPluginAsync = async (app) => {
+   app.post("/refunds/:id/status", async (req, reply) => {
+-    return { status: "pending" };
++    const gh = await container.github();
++    const status = await gh.getCheckStatus(req.params.id);
++    return { status };
+   });
+ };

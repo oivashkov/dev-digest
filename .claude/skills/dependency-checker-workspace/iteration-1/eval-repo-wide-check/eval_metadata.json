@@ -1,0 +1,14 @@
+{
+  "eval_id": 0,
+  "eval_name": "repo-wide-check",
+  "prompt": "Перевір залежності репозиторію dev-digest — наскільки вони важкі, чи є вразливі пакети, і що варто зробити в першу чергу?",
+  "assertions": [
+    "Report covers multiple/all packages (server, client, reviewer-core, e2e, mcp-server, evals), not just one",
+    "Report includes a visual dependency diagram (Mermaid or equivalent)",
+    "Report includes per-package or per-dependency size data derived from actually installed node_modules (not guessed/generic numbers)",
+    "Report includes real vulnerability data pulled from npm/pnpm audit (specific package names + severities), not generic security advice",
+    "Report ends with a ranked/prioritized action list (not just raw tables)",
+    "Report correctly distinguishes pnpm-managed vs npm-managed packages rather than assuming one package manager for the whole repo",
+    "If a package has no installed node_modules (e.g. e2e), the report flags this as a data gap rather than silently reporting zero or omitting it without comment"
+  ]
+}

@@ -1,7 +1,7 @@
 ---
 name: backend-onion-architecture
 description: "Documents and enforces dev-digest's Onion Architecture layering in server/: routes.ts (presentation) -> service.ts (application/domain) -> repository.ts (data access) and adapters/* (infrastructure ports), wired through platform/container.ts. Use when creating a new backend module, reviewing a module for direct DB or adapter access from routes.ts, or deciding which layer a piece of business logic belongs in. Does not cover Fastify route/plugin mechanics (see fastify-best-practices), Drizzle query syntax (see drizzle-orm-patterns), or Postgres schema design (see postgresql-table-design)."
-version: 0.1.0
+version: 0.2.0
 ---
 
 # Backend Onion Architecture
@@ -26,7 +26,7 @@ the two when reviewing.
 | Presentation | `modules/<name>/routes.ts` | Parses the request, maps status codes, calls one or more `service.*` methods. No business logic, no DB calls, no adapter calls. |
 | Application / domain | `modules/<name>/service.ts` (+ `helpers.ts`; `pipeline/*` for repo-intel) | Business rules and orchestration. Constructor takes `Container` (or, better, the specific repository/adapters it needs). MUST NOT import `fastify` or `FastifyInstance`/`FastifyRequest`. |
 | Infrastructure — data access | `modules/<name>/repository.ts` (split into `repository/<aggregate>.repo.ts` for multi-aggregate modules, e.g. `reviews/repository/{pull,review,run}.repo.ts`) | The ONLY place `drizzle-orm` query building or `db.*` calls happen for that module's tables. |
-| Infrastructure — ports & adapters | `src/adapters/*` implementing the interfaces declared in `@devdigest/shared`'s `adapters.ts` (`GitHubClient`, `GitLabClient`, `GitClient`, `LLMProvider`, `CodeIndex`, `Embedder`, `SecretsProvider`, `AuthProvider`, ...) | All external I/O. Never called directly from a route — always through `container.<adapter>` or the resolver helper (e.g. `container.vcsFor(repo)`). Swappable for `src/adapters/mocks.ts` in tests. |
+| Infrastructure — ports & adapters | `src/adapters/*` implementing the interfaces declared in `@devdigest/shared`'s `adapters.ts` (`GitHubClient`, `GitLabClient`, `GitClient`, `LLMProvider`, `CodeIndex`, `Embedder`, `SecretsProvider`, `AuthProvider`, ...) | All external I/O — HTTP calls, git ops, LLM calls, signature/token verification. Never called directly from a route **or from `repository.ts`** — always through `container.<adapter>` or the resolver helper (e.g. `container.vcsFor(repo)`). Adapters translate and verify; they don't decide business outcomes — a branch on domain data (a threshold, a routing decision) belongs in `service.ts`. Swappable for `src/adapters/mocks.ts` in tests. |
 | Composition root | `src/platform/container.ts` | Wires adapters + repositories into services. The one place allowed to know about every layer at once. |
 | Shared kernel / domain contracts | `src/vendor/shared/contracts/*` (Zod) | Cross-cutting domain types (`Finding`, `Review`, `Severity`, ...), shared web ↔ api. Do not redeclare these locally. |
 
@@ -39,6 +39,16 @@ the two when reviewing.
 - `service.ts` MUST NOT import `FastifyInstance`/`FastifyRequest` — if a
   service needs request-scoped data (workspace/user id), pass it as a plain
   argument, resolved in the route via `getContext()`.
+- Only `service.ts` calls into `src/adapters/*` (through the container).
+  `repository.ts` MUST NOT import or call an adapter directly — if a
+  repository method needs external I/O (e.g. verifying a signature before a
+  write), that orchestration belongs in the service; the repository stays a
+  pure `db.*` boundary.
+- `src/adapters/*` MUST NOT contain business rules — no branching on domain
+  data (a confidence threshold, a status decision). An adapter's job is
+  protocol/encoding translation and verification (parse a payload, check a
+  signature, call an API) — deciding what that verified input *means* for
+  the domain is `service.ts`'s job, not the adapter's.
 
 ## Every Module MUST Have the Three-Layer Split
 
