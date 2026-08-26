@@ -578,6 +578,23 @@ _None yet._
 
 ## Recurring Errors & Fixes
 
+- **2026-08-26** — First real `skill-evals` CI run
+  (`evals/skills/dependency-checker/dependency-checker.eval.ts`, case "full
+  report follows the required 5-section structure with a Mermaid graph")
+  failed its grounding gate (0.5, needs 1.0 —
+  `grounding: ["```mermaid", "flowchart"]`) not from a model quality issue
+  but because the skill's OWN reference example told it to fail: `.claude/
+  skills/dependency-checker/references/report-template.md` showed
+  ` ```mermaid\ngraph LR` — the older Mermaid keyword — while this repo's
+  canonical `mermaid-diagram` skill and every other diagram in the repo use
+  `flowchart`. A model that faithfully follows its own skill's template
+  cannot pass a grounding gate that checks for a different, newer keyword
+  than that template teaches. Fixed by changing the template to
+  `flowchart LR` to match repo convention, not by loosening the gate.
+  Lesson: when a grounding/pattern-match gate fails on the skill's FIRST
+  real run, check the artifact's own reference examples for the literal
+  string before assuming a model-quality problem — `grep` the exact
+  required substring across the skill's own `references/`.
 - **2026-08-20** — `.mcp.json`'s `devdigest` stdio server failed to (re)connect
   (`/mcp` reports `-32000`) even though the API and Postgres were both healthy.
   Cause: `command` pointed at nvm's `npm` by absolute path, but the MCP client

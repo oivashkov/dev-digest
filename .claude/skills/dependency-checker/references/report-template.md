@@ -39,7 +39,7 @@ A single Mermaid diagram covering:
   don't try to draw the full transitive tree, it will be unreadable.
 
 ```mermaid
-graph LR
+flowchart LR
   subgraph server [server (pnpm)]
     server_shared["@devdigest/shared (vendored)"]
   end
