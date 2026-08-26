@@ -9,6 +9,10 @@ Produces `docs/dependency-report.md`: a developer-scannable audit of every
 package's dependencies — what they weigh, how they relate, what's outdated
 or vulnerable, and what to actually do about it, ranked.
 
+Content-tier evals live at `evals/skills/dependency-checker/` and run in CI
+(`.github/workflows/evals.yml`'s `skill-evals` job) on any PR that touches
+this skill.
+
 ## Why a script does the data collection
 
 This repo has 6 independently-managed packages (`server/`, `client/`,
