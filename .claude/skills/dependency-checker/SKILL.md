@@ -109,11 +109,15 @@ Mermaid syntax.
 ### 4. Write the report
 
 Follow `references/report-template.md` section-for-section — it's the
-fixed structure this skill promises (executive summary → graph → per-package
-breakdown → heaviest deps → vulnerabilities → outdated → unused →
-prioritized recommendations). Keep every section even when empty ("None
-found.") so the shape stays predictable across runs — a developer
-skimming a second report should find the same headings in the same order.
+fixed structure this skill promises (scope → executive summary → graph →
+per-package breakdown → heaviest deps → vulnerabilities → outdated →
+unused → prioritized recommendations → summary). Keep every section even
+when empty ("None found.") so the shape stays predictable across runs — a
+developer skimming a second report should find the same headings in the
+same order. Two sections are non-negotiable regardless of how short the
+run is: **Scope** (which packages, right after the title — never leave the
+reader guessing what was and wasn't analyzed) and the closing **Summary**
+(3-5 bullets, always the last section in the file).
 
 Save to `docs/dependency-report.md` at the repo root, overwriting any
 previous run (it's meant to reflect current state, not accumulate history —

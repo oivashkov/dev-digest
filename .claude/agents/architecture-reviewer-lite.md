@@ -103,7 +103,12 @@ rather than spending the search — do not assert it as a finding.
 - VCS access MUST go through `container.vcsFor(repo)` — calling
   `container.github()` or `container.gitlab()` directly from a route or
   service, bypassing the repo-type resolution `vcsFor` performs, is a
-  boundary violation. Confirmed real call sites for calibration: the
+  boundary violation — severity **Warning**, not Critical (a real
+  violation with a clear fix; see §6). A second, ad-hoc VCS resolver
+  implemented beside `vcsFor` is a *different* typology (duplicate
+  functionality, not skip-call) and a *different* severity (**Suggestion**
+  — maintenance risk, not a broken data path). Confirmed real call sites
+  for calibration: the
   correct pattern is used at `server/src/modules/polling/routes.ts:28` and
   `server/src/modules/pulls/service.ts:37,127,175,192`
   (`container.vcsFor(repo)`); the violation pattern exists today at
@@ -125,7 +130,9 @@ rather than spending the search — do not assert it as a finding.
   `src/lib/api.ts`. Components MUST NOT call `fetch` directly — the only
   legitimate `fetch()` call in the whole client tree is inside
   `client/src/lib/api.ts:24`. A `fetch(` call anywhere else under
-  `client/src/**` (outside `src/vendor/**`) is a violation.
+  `client/src/**` (outside `src/vendor/**`) is a violation — severity
+  **Warning**, not Critical (a real violation with a clear fix, lower
+  blast radius than a safety-critical bypass; see §6).
 - Server state belongs in TanStack Query, not mirrored into `useState`. A
   component that copies query data into local state on mount/effect is a
   boundary violation of the same family (skip-call around the caching
@@ -168,7 +175,10 @@ finding, it sharpens the evidence and helps the reader see why it matters:
   through a short chain, with no clear inward direction. Per the scope
   note above, only report this when the diff itself shows both directions
   of the cycle — do not Grep the rest of the repo to confirm the other
-  side.
+  side. When you do report it, cite `file:line` for **both** sides (the new
+  import that closes the loop, and the pre-existing import on the other end
+  it now cycles back to) — reporting only the new half is an incomplete
+  finding, not a complete one scoped down.
 - **Duplicate functionality** — a second implementation of a
   responsibility a single place already owns (e.g. a second ad-hoc
   data-access module beside `src/lib/hooks/*`, a second VCS resolver
@@ -181,7 +191,8 @@ finding, it sharpens the evidence and helps the reader see why it matters:
 Every finding MUST include:
 
 1. **`file:line`** — the exact offending line(s), not "somewhere in this
-   file."
+   file." For a cyclic dependency this means both sides of the cycle (§3),
+   not just the new import that closed the loop.
 2. **The actual import or call-chain** — quote or paraphrase the specific
    line that crosses the boundary (e.g. `import { db } from
    '../../platform/container'` inside a `routes.ts`), not a description of

@@ -15,6 +15,13 @@ in the heaviest-deps table), drop one only if no package ever populates it.
 
 _Generated: [YYYY-MM-DD] · Scope: [all 6 packages | <package name>]_
 
+## Scope
+
+Packages analyzed this run: [list every package actually scoped in step 1,
+e.g. "server, client, reviewer-core, e2e" — omit any of the 6 that weren't
+in scope, and say so explicitly if the run was narrowed to fewer than all
+6, e.g. "mcp-server and evals excluded — run scoped to server/client only"].
+
 ## 1. Executive summary
 
 One paragraph: total installed footprint across scoped packages, worst
@@ -147,4 +154,15 @@ Ordering heuristic for what counts as P0 vs P1 vs P2:
 - Minor/patch-only outdated deps with no vulnerability → P2 or omit
   entirely if the list is long; don't let routine patch bumps drown out
   the findings that actually need a human decision.
+
+## 9. Summary
+
+The report's last section, always — 3 to 5 bullets, ordered highest-priority
+first, each one sentence, each naming the specific package/dependency (not a
+restatement of section 8's line items verbatim, a step back to "if you read
+nothing else, do these"). If section 8 has fewer than 3 P0/P1 items total,
+pull the highest-value P2s to fill it rather than padding with "no action
+needed" — a running report always closes with 3-5 real takeaways.
+
+1. [Package/dependency]: [one-sentence takeaway]. → `[concrete next step]`
 ````
