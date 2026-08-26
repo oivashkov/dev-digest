@@ -16,6 +16,49 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-26 — `agent-evals` moved off DeepSeek to `google/gemini-2.5-flash`: first live run showed hallucinated absolute file paths, not a partial quality gap
+
+**What:** `.github/workflows/evals.yml`'s `agent-evals` job's default
+`EVAL_MODEL_AGENTS`/`EVAL_JUDGE_MODEL_AGENTS` changed from
+`deepseek/deepseek-v4-flash` to `google/gemini-2.5-flash`, matching
+`workflow-evals`. This **corrects** (does not just add to) the entry
+directly below, which still pins `EVAL_MODEL_AGENTS` to DeepSeek.
+**Why:** PR #27's first real `agent-evals` run
+(`architecture-reviewer` + `architecture-reviewer-lite`, run `32975125072`)
+failed 15/18 and 7/9 practices respectively, every single one with
+`"passed": false, "evidence": ""` — total collapse, not a partial-quality
+miss. The trace's `reads:` list showed WHY: DeepSeek's `Read` tool calls
+used invented absolute paths that don't exist on the runner — a different
+fabricated username each run (`/Users/josh/dev/digest/...`,
+`/Users/jim/dev/digest/digest/...`, `/Users/ad/Developer/devdigest/...`,
+`/Users/xt0fer/.claude/skills/...`), mixed in with some genuinely correct
+`/home/runner/work/dev-digest/dev-digest/...` reads. A `Read` against an
+invented path returns nothing, so the model had zero real evidence to cite
+— explaining the empty `evidence` fields across every practice. This is a
+materially worse failure mode than the already-documented "does the work
+inline instead of dispatching" dispatch caveat (`evals/README.md:160-181`)
+— that one still produces a real, gradeable review; this one produces
+ungrounded fabrication. `google/gemini-2.5-flash` was already the verified
+pick for `workflow-evals`'s harder subagent-dispatch requirement, so it
+was the natural next thing to try for `agent-evals` too.
+**Rejected:** keeping DeepSeek and just accepting the failures as
+non-blocking (`agent-evals` is `continue-on-error`, so it wasn't gating
+merges either way) — rejected because a job that fails 100% of the time
+provides zero signal, which defeats the entire point of running it in CI.
+**Open question:** `workflow-evals`'s own first live run (same PR) also
+showed real, if milder, friction on `google/gemini-2.5-flash` — 10/15
+`expectFilesRead` trace cases failed because the model read a different,
+still-reasonable file than the one the case's strict substring match
+expected (e.g. `server/README.md` instead of the expected
+`server/AGENTS.md`; `mcp-server/docs/architecture.md` instead of the
+expected `mcp-server/README.md`, despite root `AGENTS.md` documenting both
+together). Most of those are `evals/workflow/nested-config-routing.eval.ts`
+cases running in CI for the first time ever — unclear yet whether that's
+gemini-2.5-flash under-performing or the cases themselves being too
+strict (single expected path vs. an array of acceptable ones). Left as-is
+pending a second data point, since `workflow-evals` is non-blocking either
+way.
+
 ### 2026-08-26 — `.github/workflows/evals.yml` wires `ci-detect.mjs` per-PR; model split per tier, only skill-evals blocks merge
 
 **What:** New `.github/workflows/evals.yml`: a `detect` job diffs the PR
@@ -31,7 +74,9 @@ Variables with its own default, so switching one tier's model is a Settings
 change, never a workflow edit:
 `EVAL_MODEL_SKILLS`/`EVAL_JUDGE_MODEL_SKILLS` (default
 `deepseek/deepseek-v4-flash`), `EVAL_MODEL_AGENTS`/`EVAL_JUDGE_MODEL_AGENTS`
-(same default), `EVAL_MODEL_WORKFLOW`/`EVAL_JUDGE_MODEL_WORKFLOW` (default
+(same default at the time — **superseded, see the entry above: moved to
+`google/gemini-2.5-flash` after PR #27's first live run**),
+`EVAL_MODEL_WORKFLOW`/`EVAL_JUDGE_MODEL_WORKFLOW` (default
 `google/gemini-2.5-flash`). Only `skill-evals` is a required check;
 `agent-evals`/`workflow-evals` run `continue-on-error: true`.
 **Why:** `ci-detect.mjs`, the LiteLLM proxy, and a GitHub Actions template

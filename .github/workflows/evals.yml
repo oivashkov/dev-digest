@@ -12,12 +12,19 @@
 # the full design this file wires up.
 #
 # Model is a per-job repo Variable (Settings -> Actions -> Variables), not hardcoded, so switching
-# engines needs no workflow edit. Split by tier because the tiers need different capabilities —
-# evals/README.md's verified-model table (:160-181):
+# engines needs no workflow edit. Split by tier because the tiers need different capabilities:
 #   skill-evals    — content only, no tool calls -> cheapest model works: deepseek/deepseek-v4-flash
-#   agent-evals    — needs correct Read/Grep/Bash tool use, but not subagent dispatch -> same
+#   agent-evals    — needs REAL, grounded Read/Grep/Bash tool use against the actual checked-out
+#                    repo -> google/gemini-2.5-flash. deepseek/deepseek-v4-flash was tried here
+#                    first (matches skill-evals' cheap default) but its first live CI run
+#                    (architecture-reviewer + -lite, PR #27) showed it hallucinating absolute file
+#                    paths for Read calls (e.g. "/Users/josh/dev/digest/...", a different invented
+#                    username each run) instead of grounding in the runner's real checkout, so
+#                    every practice failed with empty evidence — total collapse, not a partial
+#                    quality gap. See INSIGHTS.md's 2026-08-26 entry for the full trace evidence.
 #   workflow-evals — needs the model to itself DECIDE to dispatch a subagent via the Agent tool;
-#                    DeepSeek was measured doing that work inline instead -> google/gemini-2.5-flash
+#                    DeepSeek was measured (evals/README.md's verified-model table) doing that
+#                    work inline instead -> google/gemini-2.5-flash
 #
 # Blocking policy: only skill-evals is a required check. agent-evals and workflow-evals run and
 # report on every PR, but with continue-on-error, since the tool tiers are inherently more
@@ -142,8 +149,8 @@ jobs:
         agent: ${{ fromJson(needs.detect.outputs.agents) }}
     env:
       OPENROUTER_BASE_URL: http://localhost:4000
-      EVAL_MODEL: ${{ vars.EVAL_MODEL_AGENTS || 'deepseek/deepseek-v4-flash' }}
-      EVAL_JUDGE_MODEL: ${{ vars.EVAL_JUDGE_MODEL_AGENTS || 'deepseek/deepseek-v4-flash' }}
+      EVAL_MODEL: ${{ vars.EVAL_MODEL_AGENTS || 'google/gemini-2.5-flash' }}
+      EVAL_JUDGE_MODEL: ${{ vars.EVAL_JUDGE_MODEL_AGENTS || 'google/gemini-2.5-flash' }}
     steps:
       - uses: actions/checkout@v4
 
