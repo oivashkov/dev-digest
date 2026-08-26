@@ -58,6 +58,18 @@ gemini-2.5-flash under-performing or the cases themselves being too
 strict (single expected path vs. an array of acceptable ones). Left as-is
 pending a second data point, since `workflow-evals` is non-blocking either
 way.
+**Confirmed (PR #30, run `32993546054`):** `google/gemini-2.5-flash`
+produces zero hallucinated paths on a second live `agent-evals` run —
+every case now shows `tools: (none)` / `reads: (none)` (it answers from
+the diff embedded in the prompt, no Read calls at all) instead of
+DeepSeek's invented absolute paths, and pass rate on `architecture-reviewer`
+roughly doubled (8/18 vs. 3/18 on DeepSeek). Remaining failures are now
+genuine, specific content gaps with real evidence quotes — e.g. classifying
+a `fetch()`-in-component finding as Critical instead of the severity
+guide's documented Warning, or reporting only one file:line of a two-file
+cyclic-dependency pair — not infrastructure failure. That confirms the
+model switch; any further gain here is `architecture-reviewer` prompt
+tuning, not a CI/engine change.
 
 ### 2026-08-26 — `.github/workflows/evals.yml` wires `ci-detect.mjs` per-PR; model split per tier, only skill-evals blocks merge
 
