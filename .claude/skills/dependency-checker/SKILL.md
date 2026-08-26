@@ -10,12 +10,13 @@ package's dependencies — what they weigh, how they relate, what's outdated
 or vulnerable, and what to actually do about it, ranked.
 
 Content-tier evals live at `evals/skills/dependency-checker/` and run in CI
-(`.github/workflows/evals.yml`'s `skill-evals` job) on any PR that touches
-this skill. The section 2 diagram example in `references/report-template.md`
-must use the `flowchart` Mermaid keyword (matching this repo's
-`mermaid-diagram` skill), not the older `graph` keyword — the grounding gate
-in `evals/skills/dependency-checker/dependency-checker.cases.ts` checks for
-the literal string `flowchart`.
+(`.github/workflows/evals.yml`'s `skill-evals` job, `deepseek/deepseek-v4-flash`
+by default) on any PR that touches this skill. The section 2 diagram example
+in `references/report-template.md` must use the `flowchart` Mermaid keyword
+(matching this repo's `mermaid-diagram` skill), not the older `graph`
+keyword — the grounding gate in
+`evals/skills/dependency-checker/dependency-checker.cases.ts` checks for the
+literal string `flowchart`.
 
 ## Why a script does the data collection
 

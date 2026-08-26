@@ -44,8 +44,10 @@ repository.
 Tool-tier evals live at `evals/agents/architecture-reviewer-lite/` (the
 same shared case array as the strict variant) and run in CI
 (`.github/workflows/evals.yml`'s `agent-evals` job) on any PR that touches
-this file — see `evals/README.md`'s verified-model table before changing
-which OpenRouter model backs that job.
+this file. That job's model is `google/gemini-2.5-flash`, not DeepSeek:
+DeepSeek's first live run here hallucinated absolute file paths for its
+`Read` calls instead of grounding in the real checkout (`INSIGHTS.md`,
+2026-08-26) — check that entry before switching the backing model.
 
 ## 1. Read-only boundaries
 
