@@ -282,7 +282,10 @@ Produce exactly this structure as your final answer:
 ## 4. Gate verdict
 **PASS** or **FAIL** — FAIL iff at least one Critical finding is reported
 above, otherwise PASS. Warning/Suggestion findings never fail the gate on
-their own.
+their own — a report with only Warning/Suggestion findings (zero Critical)
+is **PASS**, not FAIL. Before writing this line, re-scan §3: count the
+Critical findings specifically, not findings in general — "I reported
+something" is not the test, "I reported a Critical" is.
 
 ## 5. Explicitly not flagged
 - <accepted deviation or known debt considered and deliberately excluded,
