@@ -72,7 +72,7 @@ differs per backend.
 | `EVAL_BACKEND` | Runtime | Auth | Model name format |
 |---|---|---|---|
 | `subscription` *(default)* | Claude Agent SDK on the Claude Code login | none (API key stripped) | Anthropic ID — `claude-haiku-4-5` |
-| `openrouter` | see split below | `OPENROUTER_API_KEY` | OpenRouter slug — `deepseek/deepseek-chat`, `anthropic/claude-haiku-4.5`, `google/gemini-...` |
+| `openrouter` | see split below | `OPENROUTER_API_KEY` | OpenRouter slug — `deepseek/deepseek-v4-flash`, `anthropic/claude-haiku-4.5`, `google/gemini-...` |
 
 **Why the backend splits by tier.** OpenRouter's native "Anthropic Skin" only serves *Anthropic*
 models, and only the Claude Agent SDK produces the subagent/skill/file-read trace the workflow tier
@@ -98,8 +98,8 @@ pnpm eval:skills
 
 # 2. OpenRouter + DeepSeek (native, no proxy)
 EVAL_BACKEND=openrouter \
-EVAL_MODEL=deepseek/deepseek-chat \
-EVAL_JUDGE_MODEL=deepseek/deepseek-chat \
+EVAL_MODEL=deepseek/deepseek-v4-flash \
+EVAL_JUDGE_MODEL=deepseek/deepseek-v4-flash \
 OPENROUTER_API_KEY=sk-or-... \
 pnpm eval:skills
 
@@ -166,7 +166,7 @@ workflow cases:
 | Model | Content + routing/read traces | Subagent **dispatch** (`Agent`→ `architecture-reviewer`) |
 |-------|------------------------------|-----------------------------------------------------------|
 | `google/gemini-2.5-flash` | ✅ | ✅ **recommended** |
-| `deepseek/deepseek-chat` | ✅ | ❌ does the work inline instead of dispatching |
+| `deepseek/deepseek-v4-flash` | ✅ | ❌ does the work inline instead of dispatching |
 | `openai/gpt-4.1-mini` | ✅ | ❌ |
 
 **Two caveats for the tool tiers on cheap models:**

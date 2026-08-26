@@ -16,6 +16,58 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-26 — `.github/workflows/evals.yml` wires `ci-detect.mjs` per-PR; model split per tier, only skill-evals blocks merge
+
+**What:** New `.github/workflows/evals.yml`: a `detect` job diffs the PR
+against its base and runs the already-existing `evals/scripts/ci-detect.mjs`
+to map changed files onto `{ skills[], agents[], run_workflow }`, then three
+downstream jobs consume those outputs — `skill-evals` (matrix per changed
+skill, content-tier, direct to OpenRouter, no proxy) and `agent-evals`
+(matrix per changed agent) + `workflow-evals` (triggers on `CLAUDE.md`/any
+agent/the eval engine changing) which both bring up the bundled LiteLLM
+proxy (`evals/proxy/`) since they're tool-tier. Model is **not** hardcoded
+and **not** shared across tiers — each job reads its own pair of repo
+Variables with its own default, so switching one tier's model is a Settings
+change, never a workflow edit:
+`EVAL_MODEL_SKILLS`/`EVAL_JUDGE_MODEL_SKILLS` (default
+`deepseek/deepseek-v4-flash`), `EVAL_MODEL_AGENTS`/`EVAL_JUDGE_MODEL_AGENTS`
+(same default), `EVAL_MODEL_WORKFLOW`/`EVAL_JUDGE_MODEL_WORKFLOW` (default
+`google/gemini-2.5-flash`). Only `skill-evals` is a required check;
+`agent-evals`/`workflow-evals` run `continue-on-error: true`.
+**Why:** `ci-detect.mjs`, the LiteLLM proxy, and a GitHub Actions template
+already existed in `evals/` (`evals/README.md:189-245`, from the same commit
+that added the eval package) but were never wired into an actual
+`.github/workflows/*.yml` — this file is that wiring, not a new engine.
+The per-tier model split follows `evals/README.md`'s own verified-model
+table (`:160-181`): `workflow-evals` is the tier that actually asserts the
+model **decides** to dispatch a subagent via the `Agent` tool — the one
+capability DeepSeek was measured lacking (does the work inline instead) —
+so it alone defaults to `google/gemini-2.5-flash`. `agent-evals` only needs
+correct `Read`/`Grep`/`Bash` tool use (no dispatch decision), and
+`skill-evals` needs no tool calls at all, so both stay on the cheaper
+DeepSeek default. The blocking split (only `skill-evals` required) exists
+for the same reason: making the dispatch-sensitive tiers required would
+block merges on a model quirk, not a real regression.
+**Rejected:** one shared `EVAL_MODEL`/`EVAL_JUDGE_MODEL` pair for all three
+jobs (the first version of this workflow) — collapses under the same
+verified-model table, since the cheapest model that passes `skill-evals`
+is not the one that passes `workflow-evals`'s dispatch assertion.
+**Open question:** the user's requested slug, `deepseek/deepseek-v4-flash`,
+could not be independently confirmed against OpenRouter's live catalog —
+`WebFetch` against `openrouter.ai/api/v1/models` returned inconsistent
+results across repeated calls in the same session (different "first 5
+models" each time, including names that don't look real), a signal of
+hallucinated fetch content rather than a genuine read. It's now the pinned
+default throughout `evals/README.md`, `evals/proxy/litellm.config.yaml`,
+and this workflow's `EVAL_MODEL_SKILLS`/`EVAL_MODEL_AGENTS` per explicit
+user choice — but note the "does the work inline instead of dispatching"
+finding in `evals/README.md`'s verified-model table was measured against
+the older `deepseek/deepseek-chat` slug, not re-run against `v4-flash`; the
+tier split above assumes it still applies rather than having reconfirmed
+it. Verify the slug on `openrouter.ai/models` and consider rerunning
+`agent-evals`/`workflow-evals` once against `v4-flash` to confirm the
+dispatch behavior transferred — it's a one-line repo Variable either way.
+
 ### 2026-08-25 — Renamed the `specreator` subagent to `spec-creator`
 
 **What:** `.claude/agents/specreator.md` → `.claude/agents/spec-creator.md`
