@@ -624,7 +624,25 @@ of `buildDiffStat`'s existing, already-tested row-selection logic.
 
 ## Recurring Errors & Fixes
 
-- **2026-08-18** — `@fastify/rate-limit` is never registered when
+- **2026-08-27** — `git push` rejected with `GH013 ... Push cannot contain
+  secrets` on a commit that only ever held a *synthetic* security-eval
+  fixture, no real credential. `server/src/db/fixtures/eval-cases.ts`'s
+  `hardcoded-stripe-secret-key` case used
+  `'sk_live_51H` + 48 more `x` chars `'` as the
+  must-find diff content — GitHub's push-protection secret scanner matches
+  Stripe's live-key format by prefix + alphanumeric length only (no entropy
+  check), so an all-`x` placeholder of the right shape still trips it.
+  Fixed by replacing the placeholder with a value that keeps the same
+  `sk_live_`/`whsec_` prefixes (still legible to an LLM reviewer as "looks
+  like a Stripe secret") but breaks the scanner's alphanumeric-run pattern
+  with literal underscored words —
+  `'sk_live_FIXTURE_NOT_A_REAL_KEY_0000000000000000'` — no assertion in
+  `evals-cases.it.test.ts` or elsewhere pins the literal string, only the
+  field name and diff position, so this is a safe substitution for any
+  future synthetic-secret fixture in this repo. Any new eval fixture that
+  fabricates a "looks like real secret X" diff should use the same
+  underscored-placeholder trick up front rather than discovering the
+  rejection at push time.
   `config.nodeEnv === 'test'` (`src/app.ts`: "Disabled under test so
   integration suites can hammer endpoints via inject()") — a per-route
   `config: { rateLimit: {...} } }` (e.g. `POST /pulls/:id/review`, `POST
