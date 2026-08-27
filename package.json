@@ -1,0 +1,8 @@
+{
+  "name": "dev-digest",
+  "private": true,
+  "description": "Repo-root scripts only. NOT a workspace root — server/, client/, reviewer-core/, e2e/, and mcp-server/ each keep their own package.json and lockfile (server/AGENTS.md: \"Not a monorepo workspace\"). This file has no dependencies and no lockfile on purpose; never add one.",
+  "scripts": {
+    "verify:l06": "./scripts/verify-l06.sh"
+  }
+}

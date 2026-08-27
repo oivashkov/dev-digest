@@ -8,6 +8,13 @@ vi.mock("../../../../../../../lib/hooks/reviews", () => ({
   useFindingAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+// FindingCard (rendered by FindingsPanel) now calls this hook directly for
+// its "Turn into eval case" action (SPEC-04) — mock it so a real
+// QueryClient isn't needed here, mirroring FindingCard.test.tsx's own mock.
+vi.mock("@/lib/hooks/evals", () => ({
+  useCreateEvalCaseFromFinding: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
+}));
+
 import { FindingsPanel } from "./FindingsPanel";
 
 afterEach(cleanup);

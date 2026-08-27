@@ -49,6 +49,12 @@ export const NAV: NavGroup[] = [
         href: "/repos/:repoId/conventions",
         gKey: "c",
       },
+      {
+        key: "eval",
+        label: "Eval Dashboard",
+        icon: "BarChart",
+        href: "/eval",
+      },
     ],
   },
 ];

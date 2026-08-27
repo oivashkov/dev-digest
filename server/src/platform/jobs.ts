@@ -21,6 +21,18 @@ export interface JobRunnerOptions {
   retries?: number;
 }
 
+/** Options accepted by `register()` alongside a handler. */
+export interface RegisterOptions {
+  /**
+   * Per-kind timeout override (SPEC-04 plan §9). When omitted, `enqueue()`
+   * falls back to the instance-level `timeoutMs` (default 120s) every other
+   * job kind already inherits — this is additive, not a behavior change for
+   * existing kinds. Needed because an eval batch runs N sequential LLM calls
+   * and can genuinely exceed 120s on a case set of any size.
+   */
+  timeoutMs?: number;
+}
+
 export interface EnqueuedJob {
   id: string;
   /** Resolves when the job finishes (or rejects if it ultimately fails). */
@@ -31,6 +43,7 @@ export class JobRunner {
   private queue: PQueue;
   private handlers = new Map<string, JobHandler>();
   private timeoutMs: number;
+  private timeoutMsByKind = new Map<string, number>();
   private retries: number;
 
   constructor(
@@ -42,13 +55,16 @@ export class JobRunner {
     this.retries = opts.retries ?? 2;
   }
 
-  register(kind: string, handler: JobHandler): void {
+  register(kind: string, handler: JobHandler, opts: RegisterOptions = {}): void {
     this.handlers.set(kind, handler);
+    if (opts.timeoutMs !== undefined) this.timeoutMsByKind.set(kind, opts.timeoutMs);
+    else this.timeoutMsByKind.delete(kind);
   }
 
   async enqueue(workspaceId: string, kind: string, payload: unknown): Promise<EnqueuedJob> {
     const handler = this.handlers.get(kind);
     if (!handler) throw new Error(`No job handler registered for kind '${kind}'`);
+    const timeoutMs = this.timeoutMsByKind.get(kind) ?? this.timeoutMs;
 
     const [row] = await this.db
       .insert(t.jobs)
@@ -64,7 +80,7 @@ export class JobRunner {
       try {
         await withRetry(
           () =>
-            withTimeout(handler(payload, { jobId }), this.timeoutMs).then(async () => {
+            withTimeout(handler(payload, { jobId }), timeoutMs).then(async () => {
               await this.db
                 .update(t.jobs)
                 .set({ attempts: 1 })

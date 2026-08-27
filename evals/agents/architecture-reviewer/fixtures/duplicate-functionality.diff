@@ -1,0 +1,31 @@
+diff --git a/server/src/modules/checkout/vcs-lookup.ts b/server/src/modules/checkout/vcs-lookup.ts
+new file mode 100644
+index 0000000..9999999
+--- /dev/null
++++ b/server/src/modules/checkout/vcs-lookup.ts
+@@ -0,0 +1,10 @@
++import { container } from "../../platform/container.js";
++
++/** Resolve the right VCS client for a repo's provider. */
++export function resolveVcsClient(repo: { provider: "github" | "gitlab" }) {
++  if (repo.provider === "gitlab") {
++    return container.gitlab();
++  }
++  return container.github();
++}
+diff --git a/server/src/modules/checkout/service.ts b/server/src/modules/checkout/service.ts
+index 3333333..4444444 100644
+--- a/server/src/modules/checkout/service.ts
++++ b/server/src/modules/checkout/service.ts
+@@ -1,8 +1,11 @@
+ import { priceOrder } from "./domain/checkout.js";
++import { resolveVcsClient } from "./vcs-lookup.js";
+
+ export class CheckoutService {
+   async checkout(order: { id: string; total: number; provider: "github" | "gitlab" }) {
+     const price = priceOrder(order);
++    const vcs = resolveVcsClient({ provider: order.provider });
++    await vcs.notifyOrderCreated(order.id);
+     return { price };
+   }
+ }

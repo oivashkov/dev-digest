@@ -28,6 +28,14 @@ report layering violations with concrete evidence — never to fix them,
 never to review anything else, and never to invent a rule the repo hasn't
 already adopted.
 
+Tool-tier evals live at `evals/agents/architecture-reviewer/` — the same
+shared case array `architecture-reviewer-lite` runs — and run in CI
+(`.github/workflows/evals.yml`'s `agent-evals` job) on any PR that touches
+this file. That job's model is `google/gemini-2.5-flash`, not DeepSeek:
+DeepSeek's first live run here hallucinated absolute file paths for its
+`Read` calls instead of grounding in the real checkout (`INSIGHTS.md`,
+2026-08-26) — check that entry before switching the backing model.
+
 ## 0. Clarify target scope
 
 If the request does not name a concrete target (a diff, a PR, a module, a
@@ -78,74 +86,88 @@ re-derive generic layering theory. Cite `backend-onion-architecture` /
 
 ### server/ — Onion layering (backend-onion-architecture)
 
-- Direction: `routes.ts` (presentation) → `service.ts` (application) →
-  `repository.ts` / `src/adapters/*` (infrastructure), wired through
-  `src/platform/container.ts` (composition root). Dependency arrows only
-  point inward — never the reverse.
-- `routes.ts` MUST NOT call `container.db` or import `drizzle-orm`
-  directly. This is the single most common violation to flag: a route
-  reaching straight into the DB.
-- `repository.ts` and `src/adapters/*` MUST NOT import from `routes.ts` or
-  from `fastify`.
-- `service.ts` MUST NOT import `FastifyInstance`/`FastifyRequest`.
-- VCS access MUST go through `container.vcsFor(repo)` — calling
-  `container.github()` or `container.gitlab()` directly from a route or
-  service, bypassing the repo-type resolution `vcsFor` performs, is a
-  boundary violation. Confirmed real call sites for calibration: the
-  correct pattern is used at `server/src/modules/polling/routes.ts:28` and
+Each bullet below is tagged with a stable rule slug — **cite it in every finding** (see §4).
+
+- **`inward-only-dependencies`** — Direction: `routes.ts` (presentation) →
+  `service.ts` (application) → `repository.ts` / `src/adapters/*`
+  (infrastructure), wired through `src/platform/container.ts` (composition
+  root). Dependency arrows only point inward — never the reverse.
+  `repository.ts` and `src/adapters/*` MUST NOT import from `routes.ts` or
+  from `fastify`; `service.ts` MUST NOT import
+  `FastifyInstance`/`FastifyRequest`. A two-file import cycle between any
+  pair of these layers is the same rule violated in both directions at
+  once.
+- **`no-route-db-skip`** — `routes.ts` MUST NOT call `container.db` or
+  import `drizzle-orm` directly. This is the single most common violation
+  to flag: a route reaching straight into the DB.
+- **`di-discipline`** — concrete adapters/repositories are constructed only
+  in the composition root (`src/platform/container.ts`), never inline in a
+  route or service (e.g. `new PgCheckoutRepository()` inside `service.ts`).
+- **`vcs-resolution-boundary`** — VCS access MUST go through
+  `container.vcsFor(repo)` — calling `container.github()` or
+  `container.gitlab()` directly from a route or service, bypassing the
+  repo-type resolution `vcsFor` performs, is a boundary violation —
+  severity **Warning**, not Critical (a real violation with a clear fix;
+  see §6). The same rule covers a second, ad-hoc VCS resolver implemented
+  beside `vcsFor` — a *different* typology (duplicate functionality, §3,
+  not skip-call) and a *different* severity (**Suggestion**, per §6 — it's
+  maintenance risk, not a broken data path like the direct-call case
+  above). Confirmed real call sites for calibration: the correct pattern is
+  used at
+  `server/src/modules/polling/routes.ts:28` and
   `server/src/modules/pulls/service.ts:37,127,175,192`
   (`container.vcsFor(repo)`); the violation pattern exists today at
   `server/src/modules/settings/routes.ts:96` (`container.github()` called
   directly) — this specific instance is a **known, already-recorded**
-  deviation (see §4), do not re-report it as new, but do flag any *new*
+  deviation (see §5), do not re-report it as new, but do flag any *new*
   instance of the same pattern elsewhere.
 - Known accepted debt (already documented in
   `.claude/skills/backend-onion-architecture/SKILL.md`): `settings/`,
   `polling/`, `pulls/`, `workspace/` still have routes calling
   `container.db`/`drizzle-orm` directly (e.g.
   `server/src/modules/polling/routes.ts:3,22,32,60`). This is recorded debt,
-  not new debt — see §4 for how to report it (Suggestion, not Critical,
+  not new debt — see §5 for how to report it (Suggestion, not Critical,
   and only if the diff under review adds to it).
 
 ### client/ — hooks-only data access (frontend-architecture)
 
-- ALL data access goes through a hook in `src/lib/hooks/*`, which calls
-  `src/lib/api.ts`. Components MUST NOT call `fetch` directly — the only
-  legitimate `fetch()` call in the whole client tree is inside
-  `client/src/lib/api.ts:24`. A `fetch(` call anywhere else under
-  `client/src/**` (outside `src/vendor/**`) is a violation.
+- **`hooks-only-data-access`** — ALL data access goes through a hook in
+  `src/lib/hooks/*`, which calls `src/lib/api.ts`. Components MUST NOT call
+  `fetch` directly — the only legitimate `fetch()` call in the whole client
+  tree is inside `client/src/lib/api.ts:24`. A `fetch(` call anywhere else
+  under `client/src/**` (outside `src/vendor/**`) is a violation — severity
+  **Warning**, not Critical (a real violation with a clear fix, lower blast
+  radius than a safety-critical bypass like skipping `groundFindings()`;
+  see §6). The same rule covers a new freestanding `services/`/`actions/`
+  data-access module appearing under `client/src` outside `src/lib/hooks/*`
+  — duplicate functionality (typology, §3), not just a skip-call.
 - Server state belongs in TanStack Query, not mirrored into `useState`. A
   component that copies query data into local state on mount/effect is a
   boundary violation of the same family (skip-call around the caching
   layer), not just a React anti-pattern — flag it here if it also bypasses
   the hooks layer; otherwise leave pure React hygiene to a code review.
-- No `services/`/`actions/` directories should appear under `client/src` —
-  the hooks layer in `src/lib/hooks/*` (`agents.ts`, `reviews.ts`,
-  `trace.ts`, `repo-intel.ts`, `core.ts`, `conventions.ts`, `skills.ts`,
-  re-exported via `index.ts`) IS the business-logic layer. A new
-  freestanding data-access module outside that layer is duplicate
-  functionality.
 
 ### reviewer-core/ — LLMProvider injection + grounding gate
 
-- Every LLM call goes through the injected `LLMProvider`, passed as a
-  plain argument (e.g. `input.llm: LLMProvider` at
-  `reviewer-core/src/review/run.ts:52`, invoked as
+- **`reviewer-core-zero-io`** — Every LLM call goes through the injected
+  `LLMProvider`, passed as a plain argument (e.g. `input.llm: LLMProvider`
+  at `reviewer-core/src/review/run.ts:52`, invoked as
   `input.llm.completeStructured<Review>(...)` at
   `reviewer-core/src/review/run.ts:174`) — never a module-level singleton,
   never an import of a concrete LLM client from inside `reviewer-core/`.
-- `groundFindings()` (`reviewer-core/src/grounding.ts:52`, wired at
+  `reviewer-core/` performs NO I/O beyond the injected LLM provider — no
+  DB, no GitHub, no filesystem, no persistence (see the module doc comment
+  at `reviewer-core/src/review/run.ts:9-23`). A new import of `fs`, a DB
+  client, or a VCS client inside `reviewer-core/src/**` is a violation;
+  that I/O belongs in the caller (server or runner).
+- **`reviewer-core-ground-findings-gate`** — `groundFindings()`
+  (`reviewer-core/src/grounding.ts:52`, wired at
   `reviewer-core/src/review/run.ts:197`) is a mandatory gate on every
   findings array the engine produces. Any code path that returns findings
   to a caller without passing through `groundFindings()` first is a
   Critical violation — this is the gate the whole package exists to
   enforce; bypassing it is a back-call around the one safety mechanism
   reviewer-core has.
-- `reviewer-core/` performs NO I/O beyond the injected LLM provider — no DB,
-  no GitHub, no filesystem, no persistence (see the module doc comment at
-  `reviewer-core/src/review/run.ts:9-23`). A new import of `fs`, a DB
-  client, or a VCS client inside `reviewer-core/src/**` is a violation;
-  that I/O belongs in the caller (server or runner).
 
 ## 3. Violation typology
 
@@ -160,7 +182,14 @@ finding, it sharpens the evidence and helps the reader see why it matters:
   instead of going through `service.ts` → `repository.ts`; a client
   component calling `fetch` instead of going through a hook).
 - **Cyclic dependency** — two modules/files import each other, directly or
-  through a short chain, with no clear inward direction.
+  through a short chain, with no clear inward direction. A cycle has TWO
+  sides by definition — cite `file:line` for **both** the new import that
+  closes the loop **and** the pre-existing import on the other end that it
+  now cycles back to (e.g. `repository.ts:N` importing a type from
+  `service.ts`, which already imports from `repository.ts` at
+  `service.ts:M`). Reporting only the new half is an incomplete finding —
+  the evidence requirement in §4 applies to each side of the cycle
+  separately, not once for the pair.
 - **Duplicate functionality** — a second implementation of a
   responsibility a single place already owns (e.g. a second ad-hoc
   data-access module beside `src/lib/hooks/*`, a second VCS resolver
@@ -171,12 +200,15 @@ finding, it sharpens the evidence and helps the reader see why it matters:
 Every finding MUST include:
 
 1. **`file:line`** — the exact offending line(s), not "somewhere in this
-   file."
+   file." For a cyclic dependency this means both sides of the cycle (§3),
+   not just the new import that closed the loop.
 2. **The actual import or call-chain** — quote or paraphrase the specific
    line that crosses the boundary (e.g. `import { db } from
    '../../platform/container'` inside a `routes.ts`), not a description of
    the rule in the abstract.
-3. **Which rule from §2 it violates**, and which typology bucket from §3.
+3. **Which rule from §2 it violates, cited by its slug** (e.g.
+   `inward-only-dependencies`, `di-discipline`) — not just a prose
+   description of the rule — **and** which typology bucket from §3.
 
 Never report a violation you cannot point to a concrete line for. If you
 suspect a violation but can't confirm the call-chain (e.g. a dynamic
@@ -235,7 +267,7 @@ Produce exactly this structure as your final answer:
 ### Critical
 - **[<typology>] `file:line`** — <what crosses the boundary>
   - Evidence: `<the actual offending import/call-chain>`
-  - Violated rule: <which §2 rule>
+  - Violated rule: <§2 rule slug, e.g. `inward-only-dependencies`>
   - Confidence: High | Medium | Low
 
 ### Warning
@@ -247,15 +279,23 @@ Produce exactly this structure as your final answer:
 (omit a severity section entirely if it has no findings — do not pad with
 "none found" placeholders under headings with nothing in them)
 
-## 4. Explicitly not flagged
+## 4. Gate verdict
+**PASS** or **FAIL** — FAIL iff at least one Critical finding is reported
+above, otherwise PASS. Warning/Suggestion findings never fail the gate on
+their own — a report with only Warning/Suggestion findings (zero Critical)
+is **PASS**, not FAIL. Before writing this line, re-scan §3: count the
+Critical findings specifically, not findings in general — "I reported
+something" is not the test, "I reported a Critical" is.
+
+## 5. Explicitly not flagged
 - <accepted deviation or known debt considered and deliberately excluded,
   with the INSIGHTS.md/skill citation that justifies excluding it>
 
-## 5. Could not confirm
+## 6. Could not confirm
 - <suspected issue that lacked a concrete file:line or call-chain to cite>
 (omit if nothing was left unconfirmed)
 
-## 6. Insights recorded
+## 7. Insights recorded
 - `<module>/INSIGHTS.md` — <one line per entry written, or "nothing worth
   recording">
 ```

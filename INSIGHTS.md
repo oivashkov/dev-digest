@@ -16,6 +16,264 @@ move it into `docs/` and delete it here.
 
 ## Decisions
 
+### 2026-08-26 — PR #30 closed the loop: inline severity + cyclic-dependency + gate-verdict fixes, plus `retry: 1`, turned two required-check failures green
+
+**What:** Three rounds of targeted fixes against PR #30's live CI runs
+(`.github/workflows/evals.yml`, same PR that surfaced the DeepSeek
+hallucination below), converging `skill-evals` (required) from red to
+green and `agent-evals` from 8/18 + 1/9 to 12/18 + 4/9 (non-blocking,
+still `continue-on-error`, but no longer near-zero signal):
+1. `dependency-checker/references/report-template.md` — added an explicit
+   `## Scope` section after the title and a closing `## 9. Summary`
+   section; the judge's own two missing-practice complaints
+   (0.667/0.7) named exactly these two structural pieces, and both cases
+   that touched them went to 100% on the next run.
+2. `architecture-reviewer(-lite).md` — inline severity annotations
+   (`hooks-only-data-access` / `vcs-resolution-boundary` = **Warning**,
+   not Critical) directly at the rule statement, not only in the separate
+   severity guide at the very end of the prompt. Confirmed working: the
+   `fetch()`-in-component practice ("classifies... Warning, not Critical")
+   flipped from FAIL to PASS on the very next run.
+3. That same run then surfaced a *new*, more subtle bug the severity fix
+   exposed: the model correctly labeled a finding Warning but still wrote
+   gate verdict **FAIL** — reacting to "a finding exists" instead of "a
+   Critical finding exists", despite §4 already stating the rule
+   explicitly. Fixed with a counter-example plus an explicit
+   "re-scan §3 for Criticals specifically before writing this line"
+   instruction — the next run's `fetch()` case gate verdict flipped PASS.
+4. `evals/vitest.config.ts` — `retry: 1`, added after `skill-evals`
+   (required, blocking) failed on nothing but a 240s `testTimeout` against
+   `deepseek/deepseek-v4-flash` while its two sibling cases in the same
+   job passed cleanly — plain network/rate-limit flakiness on a real
+   external LLM call, not a content regression. The very next push's
+   `skill-evals` run went green.
+**Why:** each fix targeted the SPECIFIC judge/assertion complaint from the
+prior live run rather than a guessed generic improvement — the fast
+loop (push -> real CI run -> read the exact failing practice's evidence
+field -> fix that one thing) is what surfaced #3 at all; a
+guess-and-batch approach would likely have "fixed" severity and stopped,
+missing the gate-verdict inconsistency entirely.
+**Open question:** `architecture-reviewer`'s cyclic-dependency case still
+only cites one side of the two-file cycle despite the same "cite both
+sides" instruction added to both variants — the model's response for that
+specific fixture is suspiciously short (233 output tokens for a full
+review), suggesting it may be truncating its own analysis for a small diff
+rather than ignoring the instruction. Not chased further this round: the
+job is non-blocking and pass rate is still trending up overall (8→11→12
+on `architecture-reviewer`).
+
+### 2026-08-27 — SPEC-04 Step 11: the plan's Step-4 test-file pointer for gate 3 was wrong; the real scenario lives in `evals-dashboard.it.test.ts`, not `evals-runs.it.test.ts`
+
+**What:** `specs/04-eval-pipeline-plan.md` Step 11 names
+`server/test/evals-runs.it.test.ts` as the home of the "system-prompt
+change + re-run moves recall/precision between two runs" scenario
+`pnpm verify:l06`'s gate 3 checks. Reading that file, it has no such test —
+its three cases are the zero-cases `400`, a single synchronous run, and a
+batch dispatch with one malformed case; none bumps `agents.version` or
+diffs two runs. The actual scenario — two real batch runs of the *same*
+case, `PUT /agents/:id` bumping `system_prompt` between them, `MockLLMProvider`
+swapped per run, then asserting `body.delta.precision` moved and `alert`
+names it — is `evals-dashboard.it.test.ts`'s first test, `'computes
+delta/alert across two runs of the same case set, filters by since, and
+rejects a malformed since with 422'`.
+**Why:** `scripts/verify-l06.sh`'s gate 3 must invoke a real, existing named
+test per the plan's own instruction ("the script does not duplicate
+assertions" — it only re-invokes owned tests), so pointing it at the wrong
+file would either silently no-op (0 tests matched) or require writing new
+assertions the plan explicitly forbade. Verified by reading both files',
+grepping `agent_version`/`system_prompt` across all three `evals-*.it.test.ts`
+files, and confirming the dashboard file's docstring literally says "Two
+real batch runs of the SAME case, at two different `agents.version`s".
+**Rejected:** silently pointing gate 3 at `evals-runs.it.test.ts` anyway (it
+would report 0 tests matched under any `-t` filter targeting this scenario,
+which the script's `SKIP` classification would correctly flag as a failure,
+not a false pass — but that's a worse outcome than fixing the pointer).
+**Check:** `server/test/evals-dashboard.it.test.ts:126-181`,
+`scripts/verify-l06.sh` (Gate 3 section), `specs/04-eval-pipeline-plan.md`
+Step 11.
+
+### 2026-08-27 — `pnpm run <script>` from a dependency-free root `package.json` writes a stray root `pnpm-lock.yaml` as a side effect, even with zero dependencies
+
+**What:** pnpm v11.20.0 writes an empty-importer `pnpm-lock.yaml`
+(`lockfileVersion: '9.0' / importers: . : {}`) at the repo root within
+seconds of running `pnpm run verify:l06` (or any `pnpm run <script>`) from
+a directory whose `package.json` has no `dependencies`/`devDependencies`
+and no existing lockfile — reproduced 3× in a row, every time, before the
+invoked script's own first line of output even appears. This directly
+threatens the repo's "not a monorepo workspace" invariant (root
+`AGENTS.md`, 2026-07-31 entry below): a root `pnpm-lock.yaml` existing at
+all is the exact signal that would make a future reader believe this
+repo IS a pnpm workspace.
+**Why:** appears to be pnpm's own project-resolution step for `run`,
+unrelated to anything the invoked script does — no `--no-lockfile` flag
+exists for `pnpm run` (only for `pnpm install`), and neither `server/.npmrc`
+nor `client/.npmrc` sets `lockfile=false` (setting that at the root would
+risk leaking into those real subpackages' own lockfile enforcement via
+pnpm's hierarchical `.npmrc` resolution — not attempted, too risky for an
+unverified payoff).
+**Fix:** `scripts/verify-l06.sh` self-heals — a `scrub_stray_root_lockfile`
+helper runs at both start and exit (via `trap`), deleting
+`pnpm-lock.yaml` ONLY when it is (a) untracked by git and (b) matches
+pnpm's exact empty-stub shape; a real, intentionally-committed lockfile
+(tracked, or containing actual dependency entries) is left untouched.
+Confirmed clean after a full `pnpm run verify:l06` invocation: script exits
+0, root has no `pnpm-lock.yaml` afterward.
+**Rejected:** adding a root `.npmrc` with `lockfile=false` — would need
+verifying it doesn't leak into `server/`/`client/`'s own pnpm config
+resolution before trusting it repo-wide, and `scripts/verify-l06.sh`
+(an Owned path already granted to this step) was sufficient to fully
+solve it without a new file.
+**Check:** `scripts/verify-l06.sh` (`scrub_stray_root_lockfile`).
+
+### 2026-08-27 — SPEC-04 case-editor warning cannot assume a direct client import from `reviewer-core`
+
+**What:** `specs/04-eval-pipeline.md` AC 78 requires the case editor's
+out-of-hunk warning to be computed with `reviewer-core`'s exported
+`buildLineIndex`, but `client/` currently has no `reviewer-core` package
+dependency or tsconfig alias. A plan that puts this warning directly in a
+Client Component must first add an explicit supported sharing path
+(contract/shared helper, server validation endpoint, or a deliberate
+client tsconfig/package change).
+**Why:** `client/tsconfig.json` only maps `@/*`, `@devdigest/shared/*`,
+and `@devdigest/ui/*`, while `client/package.json` has no
+`reviewer-core` dependency. Importing the helper ad hoc from the UI lane
+will fail typecheck/build rather than merely violating style.
+**Rejected:** relying on cross-package source imports implicitly because
+the repo uses tsconfig aliases elsewhere — the client package's own config
+is the boundary that matters here.
+**Check:** `client/tsconfig.json:22-28`, `client/package.json:12-23`,
+`specs/04-eval-pipeline.md:460-464`,
+`specs/04-eval-pipeline-plan.md:164`.
+
+### 2026-08-26 — `agent-evals` moved off DeepSeek to `google/gemini-2.5-flash`: first live run showed hallucinated absolute file paths, not a partial quality gap
+
+**What:** `.github/workflows/evals.yml`'s `agent-evals` job's default
+`EVAL_MODEL_AGENTS`/`EVAL_JUDGE_MODEL_AGENTS` changed from
+`deepseek/deepseek-v4-flash` to `google/gemini-2.5-flash`, matching
+`workflow-evals`. This **corrects** (does not just add to) the entry
+directly below, which still pins `EVAL_MODEL_AGENTS` to DeepSeek.
+**Why:** PR #27's first real `agent-evals` run
+(`architecture-reviewer` + `architecture-reviewer-lite`, run `32975125072`)
+failed 15/18 and 7/9 practices respectively, every single one with
+`"passed": false, "evidence": ""` — total collapse, not a partial-quality
+miss. The trace's `reads:` list showed WHY: DeepSeek's `Read` tool calls
+used invented absolute paths that don't exist on the runner — a different
+fabricated username each run (`/Users/josh/dev/digest/...`,
+`/Users/jim/dev/digest/digest/...`, `/Users/ad/Developer/devdigest/...`,
+`/Users/xt0fer/.claude/skills/...`), mixed in with some genuinely correct
+`/home/runner/work/dev-digest/dev-digest/...` reads. A `Read` against an
+invented path returns nothing, so the model had zero real evidence to cite
+— explaining the empty `evidence` fields across every practice. This is a
+materially worse failure mode than the already-documented "does the work
+inline instead of dispatching" dispatch caveat (`evals/README.md:160-181`)
+— that one still produces a real, gradeable review; this one produces
+ungrounded fabrication. `google/gemini-2.5-flash` was already the verified
+pick for `workflow-evals`'s harder subagent-dispatch requirement, so it
+was the natural next thing to try for `agent-evals` too.
+**Rejected:** keeping DeepSeek and just accepting the failures as
+non-blocking (`agent-evals` is `continue-on-error`, so it wasn't gating
+merges either way) — rejected because a job that fails 100% of the time
+provides zero signal, which defeats the entire point of running it in CI.
+**Open question:** `workflow-evals`'s own first live run (same PR) also
+showed real, if milder, friction on `google/gemini-2.5-flash` — 10/15
+`expectFilesRead` trace cases failed because the model read a different,
+still-reasonable file than the one the case's strict substring match
+expected (e.g. `server/README.md` instead of the expected
+`server/AGENTS.md`; `mcp-server/docs/architecture.md` instead of the
+expected `mcp-server/README.md`, despite root `AGENTS.md` documenting both
+together). Most of those are `evals/workflow/nested-config-routing.eval.ts`
+cases running in CI for the first time ever — unclear yet whether that's
+gemini-2.5-flash under-performing or the cases themselves being too
+strict (single expected path vs. an array of acceptable ones). Left as-is
+pending a second data point, since `workflow-evals` is non-blocking either
+way.
+**Confirmed (PR #30, run `32993546054`):** `google/gemini-2.5-flash`
+produces zero hallucinated paths on a second live `agent-evals` run —
+every case now shows `tools: (none)` / `reads: (none)` (it answers from
+the diff embedded in the prompt, no Read calls at all) instead of
+DeepSeek's invented absolute paths, and pass rate on `architecture-reviewer`
+roughly doubled (8/18 vs. 3/18 on DeepSeek). Remaining failures are now
+genuine, specific content gaps with real evidence quotes — e.g. classifying
+a `fetch()`-in-component finding as Critical instead of the severity
+guide's documented Warning, or reporting only one file:line of a two-file
+cyclic-dependency pair — not infrastructure failure. That confirms the
+model switch; any further gain here is `architecture-reviewer` prompt
+tuning, not a CI/engine change.
+
+### 2026-08-26 — `.github/workflows/evals.yml` wires `ci-detect.mjs` per-PR; model split per tier, only skill-evals blocks merge
+
+**What:** New `.github/workflows/evals.yml`: a `detect` job diffs the PR
+against its base and runs the already-existing `evals/scripts/ci-detect.mjs`
+to map changed files onto `{ skills[], agents[], run_workflow }`, then three
+downstream jobs consume those outputs — `skill-evals` (matrix per changed
+skill, content-tier, direct to OpenRouter, no proxy) and `agent-evals`
+(matrix per changed agent) + `workflow-evals` (triggers on `CLAUDE.md`/any
+agent/the eval engine changing) which both bring up the bundled LiteLLM
+proxy (`evals/proxy/`) since they're tool-tier. Model is **not** hardcoded
+and **not** shared across tiers — each job reads its own pair of repo
+Variables with its own default, so switching one tier's model is a Settings
+change, never a workflow edit:
+`EVAL_MODEL_SKILLS`/`EVAL_JUDGE_MODEL_SKILLS` (default
+`deepseek/deepseek-v4-flash`), `EVAL_MODEL_AGENTS`/`EVAL_JUDGE_MODEL_AGENTS`
+(same default at the time — **superseded, see the entry above: moved to
+`google/gemini-2.5-flash` after PR #27's first live run**),
+`EVAL_MODEL_WORKFLOW`/`EVAL_JUDGE_MODEL_WORKFLOW` (default
+`google/gemini-2.5-flash`). Only `skill-evals` is a required check;
+`agent-evals`/`workflow-evals` run `continue-on-error: true`.
+**Why:** `ci-detect.mjs`, the LiteLLM proxy, and a GitHub Actions template
+already existed in `evals/` (`evals/README.md:189-245`, from the same commit
+that added the eval package) but were never wired into an actual
+`.github/workflows/*.yml` — this file is that wiring, not a new engine.
+The per-tier model split follows `evals/README.md`'s own verified-model
+table (`:160-181`): `workflow-evals` is the tier that actually asserts the
+model **decides** to dispatch a subagent via the `Agent` tool — the one
+capability DeepSeek was measured lacking (does the work inline instead) —
+so it alone defaults to `google/gemini-2.5-flash`. `agent-evals` only needs
+correct `Read`/`Grep`/`Bash` tool use (no dispatch decision), and
+`skill-evals` needs no tool calls at all, so both stay on the cheaper
+DeepSeek default. The blocking split (only `skill-evals` required) exists
+for the same reason: making the dispatch-sensitive tiers required would
+block merges on a model quirk, not a real regression.
+**Rejected:** one shared `EVAL_MODEL`/`EVAL_JUDGE_MODEL` pair for all three
+jobs (the first version of this workflow) — collapses under the same
+verified-model table, since the cheapest model that passes `skill-evals`
+is not the one that passes `workflow-evals`'s dispatch assertion.
+**Open question:** the user's requested slug, `deepseek/deepseek-v4-flash`,
+could not be independently confirmed against OpenRouter's live catalog —
+`WebFetch` against `openrouter.ai/api/v1/models` returned inconsistent
+results across repeated calls in the same session (different "first 5
+models" each time, including names that don't look real), a signal of
+hallucinated fetch content rather than a genuine read. It's now the pinned
+default throughout `evals/README.md`, `evals/proxy/litellm.config.yaml`,
+and this workflow's `EVAL_MODEL_SKILLS`/`EVAL_MODEL_AGENTS` per explicit
+user choice — but note the "does the work inline instead of dispatching"
+finding in `evals/README.md`'s verified-model table was measured against
+the older `deepseek/deepseek-chat` slug, not re-run against `v4-flash`; the
+tier split above assumes it still applies rather than having reconfirmed
+it. Verify the slug on `openrouter.ai/models` and consider rerunning
+`agent-evals`/`workflow-evals` once against `v4-flash` to confirm the
+dispatch behavior transferred — it's a one-line repo Variable either way.
+
+### 2026-08-26 — Strict/lite agent A/B keeps identical eval cases; "lite forgets" lives only in the agent prompt
+
+**What:** `architecture-reviewer-lite` (`.claude/agents/architecture-reviewer-lite.md`)
+runs the exact same shared case array as `architecture-reviewer`
+(`evals/agents/architecture-reviewer/architecture-reviewer.cases.ts`) — no
+case is skipped or written lite-only. The three things lite "forgets" (§0
+clarify-target-scope, the rule-slug citation requirement added in this
+session, repo-wide cyclic-dependency/duplicate-functionality search) are all
+instruction drops inside the `.md` prompt itself, never a difference in
+which cases run.
+**Why:** `evals/README.md`'s own controlled-A/B design ("same fixture, same
+practices, same threshold... `eval:delta` shows exactly which practice
+moved") only produces a real per-practice delta when both sides run the
+identical case; a case that only exists for one variant produces
+`missing_data`, not a comparison.
+**Rejected:** having lite skip some cases outright (e.g. no ambiguous-target
+case, no cyclic-dependency case) to "save budget" — raised as the first
+instinct, but it breaks `eval:delta`'s per-practice matrix and defeats the
+reason this package favors shared cases in the first place.
+
 ### 2026-08-25 — Renamed the `specreator` subagent to `spec-creator`
 
 **What:** `.claude/agents/specreator.md` → `.claude/agents/spec-creator.md`
@@ -296,6 +554,48 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-26** — SPEC-04 Step 1's `EvalExpectation` array cap could not be
+  put on `EvalCaseInput.expected_output` itself, because that field is
+  deliberately `z.unknown()` (validated as `z.array(EvalExpectation)` only at
+  the route boundary, AC 48) — capping it there would have re-typed a field
+  the plan says stays untouched. Added a second exported schema,
+  `EvalExpectationArray = z.array(EvalExpectation).max(MAX_EVAL_EXPECTATIONS)`,
+  alongside `EvalExpectation` in `contracts/eval-ci.ts`, for the route layer
+  to import and parse `expected_output` against — `EvalExpectation` alone has
+  no length bound. Whoever builds the `evals/` routes (SPEC-04 Step 4) needs
+  `EvalExpectationArray`, not a bare `z.array(EvalExpectation)`, or AC 48's
+  cap silently doesn't apply. `server/src/vendor/shared/contracts/eval-ci.ts`,
+  `client/src/vendor/shared/contracts/eval-ci.ts` (byte-identical block in
+  both copies).
+
+- **2026-08-26** — A doc comment on a contract can assert a capability the
+  schema doesn't actually support. `AgentVersionConfig`'s comment
+  (`server/src/vendor/shared/contracts/knowledge.ts:334-338`) says the
+  `agent_versions` snapshot exists "for reproducibility (**eval replays a
+  past version**)" — but `eval_runs` (`server/src/db/schema/eval.ts:22-35`)
+  has **no** version column and no agent link at all: its only FK is
+  `case_id → eval_cases`, and `eval_cases.owner_id` is a bare `uuid` with no
+  FK either. So a run is attributable to an *agent* (transitively) but never
+  to the `agents.version` / `agent_versions.config_json.system_prompt` it
+  ran under — the exact thing an old-prompt-vs-new-prompt comparison needs.
+  `eval_runs` also has no `batch_id`, so "one aggregate per run of the case
+  set" has nowhere to be grouped from. Both surfaced speccing SPEC-04
+  (`specs/04-eval-pipeline.md` Open questions 1-2). **Before trusting a
+  contract comment that names a downstream use case, check that the
+  downstream table actually carries the join column it implies.**
+
+- **2026-08-26** — An eval case file (`*.cases.ts`) can encode assumptions
+  about a subagent's behavior that the subagent's own `.md` prompt never
+  actually states. `evals/agents/architecture-reviewer/architecture-reviewer.cases.ts`
+  had 4 cases already asserting a slug-style rule identifier
+  (`inward-only-dependencies`, `di-discipline`, `reviewer-core-zero-io`,
+  `reviewer-core-ground-findings-gate`) and an "explicit PASS/FAIL gate
+  verdict" — neither the strings, nor any gate-verdict output section,
+  existed anywhere in `.claude/agents/architecture-reviewer.md` (confirmed
+  by `grep`, zero hits) before this session added them. Before trusting an
+  inherited case file's practices, grep the artifact itself for the exact
+  terms the practices name.
+
 - **2026-08-24** — Amending an **already-approved, already-implemented**
   spec (`specs/03-pr-why-risk-brief.md`, adding the 8k-token prompt budget)
   is append-only: new acceptance criteria get the next free numbers
@@ -428,6 +728,41 @@ _None yet._
 
 ## Tool & Library Notes
 
+- **2026-08-26** — `WorkflowCase`'s `expectFilesRead` (`evals/src/dsl/case.ts`)
+  matches by substring (`actualPath.includes(target)`), so a bare filename
+  like `"INSIGHTS.md"` matches every package's copy, not just the one
+  intended — `"server/INSIGHTS.md".includes("INSIGHTS.md")` is `true`. To
+  assert the ROOT file specifically, the target string needs the parent
+  directory immediately before the filename with no intervening package
+  segment, e.g. `"dev-digest/INSIGHTS.md"` (repo folder name + filename) —
+  the shortest substring still unique to the root copy.
+  `evals/workflow/nested-config-routing.cases.ts`.
+
+- **2026-08-26** — Sizing a pnpm-managed `node_modules/<dep>` with `du` needs
+  a *one-level* symlink resolution, not a blanket `-L`. First cut: plain
+  `du -sk node_modules/<dep>` silently reports **~0 bytes** for any
+  pnpm-managed package (`server/`, `client/`, `evals/` — see `AGENTS.md`'s
+  pnpm/npm split), because pnpm links `node_modules/<dep>` into its
+  content-addressed store and `du` without `-L` measures only the symlink
+  itself. **`du -skL` looked like the fix but is wrong**: pnpm's store
+  packages nest their *own* dependencies as further symlinks too (e.g.
+  `client/node_modules/next`'s resolved dir has `node_modules/{react,
+  postcss,styled-jsx,...}` as symlinks back into the store) — `-L` follows
+  those recursively, so one top-level dependency's reported size silently
+  includes its whole transitive tree. Confirmed on `client/`: real
+  `du -sh node_modules` = 620 MB, `du -shL node_modules` = 1.8 GB — a ~3x
+  overcount, not a rounding error, and it surfaced only when a
+  `dependency-checker` skill eval run cross-checked the script's number
+  against a plain manual `du -sh`. **Working fix:** resolve only the single
+  symlink at `node_modules/<dep>` via `fs.realpathSync`, then run plain
+  `du -sk` (no `-L`) on that resolved directory — reports the package's own
+  installed content once, matching how npm's real (non-symlinked) hoisted
+  directories already behave, without re-descending into whatever it links
+  to internally. Also confirmed while building the same tool: both
+  `npm`/`pnpm outdated --json` and `audit --json` exit non-zero whenever
+  they find something to report — that is expected, not a failure signal,
+  so parse `stdout` regardless of exit code rather than gating on it.
+  `.claude/skills/dependency-checker/scripts/collect-deps.mjs`
 - **2026-08-23** — The `<total_tokens>N tokens left</total_tokens>` system
   reminder attached to tool results is **not** a monotonically-decreasing
   usage counter — it can jump back up between turns (context summarization/
@@ -459,6 +794,23 @@ _None yet._
 
 ## Recurring Errors & Fixes
 
+- **2026-08-26** — First real `skill-evals` CI run
+  (`evals/skills/dependency-checker/dependency-checker.eval.ts`, case "full
+  report follows the required 5-section structure with a Mermaid graph")
+  failed its grounding gate (0.5, needs 1.0 —
+  `grounding: ["```mermaid", "flowchart"]`) not from a model quality issue
+  but because the skill's OWN reference example told it to fail: `.claude/
+  skills/dependency-checker/references/report-template.md` showed
+  ` ```mermaid\ngraph LR` — the older Mermaid keyword — while this repo's
+  canonical `mermaid-diagram` skill and every other diagram in the repo use
+  `flowchart`. A model that faithfully follows its own skill's template
+  cannot pass a grounding gate that checks for a different, newer keyword
+  than that template teaches. Fixed by changing the template to
+  `flowchart LR` to match repo convention, not by loosening the gate.
+  Lesson: when a grounding/pattern-match gate fails on the skill's FIRST
+  real run, check the artifact's own reference examples for the literal
+  string before assuming a model-quality problem — `grep` the exact
+  required substring across the skill's own `references/`.
 - **2026-08-20** — `.mcp.json`'s `devdigest` stdio server failed to (re)connect
   (`/mcp` reports `-32000`) even though the API and Postgres were both healthy.
   Cause: `command` pointed at nvm's `npm` by absolute path, but the MCP client

@@ -139,6 +139,57 @@ export class AgentsService {
     return row ? toAgentVersionDto(row) : undefined;
   }
 
+  /**
+   * SPEC-04 "Promote prompt & model vN" — restore an older `agent_versions`
+   * snapshot's config onto the agent via the existing `update()` path.
+   *
+   * **Scope, deliberately partial:** restores only the seven fields
+   * `update()`'s patch accepts — `provider`, `model`, `system_prompt`,
+   * `output_schema`, `strategy`, `ci_fail_on`, `repo_intel`. It does NOT
+   * touch the agent's linked `skills` or attached `context_docs`, even
+   * though `AgentVersionConfig` snapshots both (`skills[]`/`context_docs[]`
+   * are written only through `setSkills`/`setContextDocs` — see
+   * `server/INSIGHTS.md` 2026-08-26). Restoring those two would need a
+   * second, unrelated write with no shared transaction spanning it and the
+   * config update, so a caller that needs a full revert must call
+   * `setSkills`/`setContextDocs` itself afterward — this method is
+   * config-only by design, not by oversight, and callers must label any
+   * control that invokes it accordingly (SPEC-04 AC 59: "Promote prompt &
+   * model vN", never the bare "Promote vN" that would imply a full revert).
+   *
+   * Because `update()` bumps `agents.version` and snapshots a NEW row on any
+   * config change, a promote lands as a new version rather than mutating
+   * history (AC 57) — no historical `agent_versions` row is ever modified.
+   *
+   * **Fails loudly on a malformed snapshot.** `getVersion()` already runs
+   * the stored `config_json` through `AgentVersionConfig.parse()`
+   * (`helpers.ts#toAgentVersionDto`), which throws on a partial/malformed
+   * snapshot rather than silently defaulting missing fields — a promote
+   * must never write a half-parsed config onto a live agent, so this method
+   * deliberately does not catch that parse failure.
+   *
+   * Returns undefined when the agent isn't in this workspace or that
+   * version was never recorded for it (route → 404, matching `getVersion`).
+   */
+  async restoreVersion(
+    workspaceId: string,
+    agentId: string,
+    version: number,
+  ): Promise<Agent | undefined> {
+    const snapshot = await this.getVersion(workspaceId, agentId, version);
+    if (!snapshot) return undefined;
+    const { config } = snapshot;
+    return this.update(workspaceId, agentId, {
+      provider: config.provider,
+      model: config.model,
+      system_prompt: config.system_prompt,
+      output_schema: config.output_schema,
+      strategy: config.strategy,
+      ci_fail_on: config.ci_fail_on,
+      repo_intel: config.repo_intel,
+    });
+  }
+
   /** Linked skills for an agent as AgentSkillLink[] (ordered). */
   async skillLinks(agentId: string): Promise<AgentSkillLink[]> {
     const links = await this.repo.linkedSkills(agentId);

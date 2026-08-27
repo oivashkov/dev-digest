@@ -13,6 +13,7 @@ import {
   API_CONTRACT_REVIEWER_PROMPT,
 } from './seed-prompts.js';
 import { extractSkillCore } from '../modules/skills/helpers.js';
+import { SECURITY_REVIEWER_EVAL_CASES } from './fixtures/eval-cases.js';
 
 /** Default provider/model for the built-in reviewer agents. */
 const DEFAULT_PROVIDER = 'openrouter' as const;
@@ -28,13 +29,15 @@ const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
  * demo repo (acme/payments-api), PR #482 with files/commits, a sample review
  * with a few findings, five built-in agents (General + Security + Performance
  * + Test Quality + API Contract), all on the default openrouter/deepseek-v4
- * -flash provider+model, and a handful of skills linked to the two newest
+ * -flash provider+model, a handful of skills linked to the two newest
  * agents — one of them (`pr-quality-rubric`) seeded through the actual
  * import/extract path (`extractSkillCore`) against a fixture file, not
- * hand-written, so the seed itself exercises the import code path.
+ * hand-written, so the seed itself exercises the import code path — and
+ * ≥8 frozen eval cases for the Security Reviewer agent (SPEC-04 AC 1,
+ * `fixtures/eval-cases.ts`).
  *
- * Course lessons populate the remaining tables (conventions, memory, eval, …)
- * once their features are built — they start empty here.
+ * Course lessons populate the remaining tables (conventions, memory, …) once
+ * their features are built — they start empty here.
  */
 
 export const DEFAULT_WORKSPACE_NAME = 'default';
@@ -252,6 +255,37 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       .from(t.agents)
       .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, a.name)));
     if (!existing) await db.insert(t.agents).values(a);
+  }
+
+  // ---- eval cases (Security Reviewer demo case set, SPEC-04 AC 1) ----
+  // Direct db.insert() here bypasses repository side effects, same as the
+  // skills-seeding loop below — safe for eval_cases since it has none
+  // (server/INSIGHTS.md, 2026-08-12 seed trap). onConflictDoNothing targets
+  // the (owner_id, name) unique constraint (Step 2's migration) explicitly
+  // so re-running `pnpm db:seed` against an already-seeded DB stays a no-op
+  // instead of assuming a clean database.
+  const [securityReviewer] = await db
+    .select()
+    .from(t.agents)
+    .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, 'Security Reviewer')));
+  if (securityReviewer) {
+    const evalCaseRows: Array<typeof t.evalCases.$inferInsert> = SECURITY_REVIEWER_EVAL_CASES.map(
+      (c) => ({
+        workspaceId,
+        ownerKind: 'agent' as const,
+        ownerId: securityReviewer.id,
+        name: c.name,
+        inputDiff: c.inputDiff,
+        inputFiles: c.inputFiles,
+        inputMeta: c.inputMeta,
+        expectedOutput: c.expectedOutput,
+        notes: c.notes,
+      }),
+    );
+    await db
+      .insert(t.evalCases)
+      .values(evalCaseRows)
+      .onConflictDoNothing({ target: [t.evalCases.ownerId, t.evalCases.name] });
   }
 
   // ---- skills (linked to the two newest agents) ----

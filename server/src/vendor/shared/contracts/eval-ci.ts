@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Verdict, Finding } from './findings.js';
+import { Verdict, Finding, Severity, FindingCategory } from './findings.js';
 import { EvalRun, EvalOwnerKind, Conformance, Provider, CiFailOn } from './knowledge.js';
 
 /**
@@ -13,14 +13,49 @@ import { EvalRun, EvalOwnerKind, Conformance, Provider, CiFailOn } from './knowl
  */
 
 // ===========================================================================
-// Eval — case input + persisted run record + dashboard
+// Eval — case input + expected-output shape + persisted run record + dashboard
 // ===========================================================================
+
+/** Max characters for an eval case's author-typed `name` (SPEC-04 "Untrusted
+ *  inputs" — `EvalCaseInput.name` had no `.max()` on the given contract). */
+export const MAX_EVAL_CASE_NAME_LENGTH = 200;
+
+/** Max entries in an eval case's `expected_output` array (SPEC-04 "Untrusted
+ *  inputs" — the case editor feeds a raw JSON textarea, so a validating
+ *  schema needs an explicit bound; `z.unknown()`/`z.array()` don't bound one
+ *  by default). */
+export const MAX_EVAL_EXPECTATIONS = 100;
+
+/**
+ * One assertion inside an eval case's `expected_output` array (AC 47-48).
+ * `severity`/`category`/`title` are stored and displayed but never scored —
+ * only `expect` + `file` + the line range participate in matching (AC 36-46).
+ * `EvalCaseInput.expected_output` stays `z.unknown()` on that contract; this
+ * schema is what the route boundary validates it as (`z.array(EvalExpectation)`).
+ */
+export const EvalExpectation = z.object({
+  expect: z.enum(['must_find', 'must_not_flag']).default('must_find'),
+  file: z.string(),
+  start_line: z.number().int(),
+  end_line: z.number().int().optional(),
+  severity: Severity.optional(),
+  category: FindingCategory.optional(),
+  title: z.string().optional(),
+});
+export type EvalExpectation = z.infer<typeof EvalExpectation>;
+/** Caller-facing input type — `expect` stays optional (defaults server-side). */
+export type EvalExpectationInput = z.input<typeof EvalExpectation>;
+
+/** The full `expected_output` array, capped at `MAX_EVAL_EXPECTATIONS`. A bare
+ *  `[]` stays valid — it means "this diff should produce nothing at all". */
+export const EvalExpectationArray = z.array(EvalExpectation).max(MAX_EVAL_EXPECTATIONS);
+export type EvalExpectationArray = z.infer<typeof EvalExpectationArray>;
 
 /** Create/update payload for an eval case (id + owner resolved by the route). */
 export const EvalCaseInput = z.object({
   owner_kind: EvalOwnerKind,
   owner_id: z.string(),
-  name: z.string().min(1),
+  name: z.string().min(1).max(MAX_EVAL_CASE_NAME_LENGTH),
   input_diff: z.string().default(''),
   input_files: z.unknown().nullish(),
   input_meta: z.unknown().nullish(),
@@ -42,6 +77,12 @@ export const EvalRunRecord = z.object({
   citation_accuracy: z.number().nullable(),
   duration_ms: z.number().int().nullable(),
   cost_usd: z.number().nullable(),
+  /** The agent config version this row ran against, and the dispatch batch
+   *  it belongs to (both columns already exist on `eval_runs`, added for the
+   *  Compare-runs feature — see `client/INSIGHTS.md`, 2026-08-27 Decision).
+   *  Nullable because a row predating either column has neither stamped. */
+  agent_version: z.number().int().nullable(),
+  batch_id: z.string().nullable(),
 });
 export type EvalRunRecord = z.infer<typeof EvalRunRecord>;
 

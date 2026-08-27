@@ -127,6 +127,34 @@ outright. Any future feature with a similar "salvage what's valid, cap the
 rest" AC should copy THIS split, not the conventions 1:1 pattern.
 `src/modules/onboarding/{prompt,helpers,service}.ts`.
 
+### 2026-08-27 — Per-kind job timeout, implemented as designed in plan §9
+
+**What:** `JobRunner.register(kind, handler, opts?)` now accepts an optional
+`{ timeoutMs }` alongside the handler (`platform/jobs.ts`), stored in a
+`Map<kind, timeoutMs>` and consulted by `enqueue()` in place of the
+instance-level default (still 120s) for that one kind. `evals/runner.ts`
+registers `EVAL_BATCH_JOB_KIND` with `EVAL_BATCH_JOB_TIMEOUT_MS` (10 min,
+`evals/constants.ts`). Every other kind (clone, index, polling, onboarding,
+conventions) keeps the 120s default untouched — purely additive.
+**Why:** confirmed for real running an 8-case batch against
+`deepseek/deepseek-v4-flash`: each case took ~25-30s sequentially (no
+parallelism inside one batch — `runBatch` awaits each `runOneCase` before
+starting the next), so the batch as a whole took well over 120s. The old
+single instance-level `timeoutMs` would have raced past the handler
+(`withTimeout` is a `Promise.race` — it rejects but does NOT cancel the
+handler) and reported `jobs.status = 'failed'` while the batch kept running
+and writing rows. `GET /agents/:id/eval-runs/:batchId` derives `done` from
+counting `eval_runs` rows against the case-set size specifically so this
+scenario is inert even if the timeout is ever hit in practice — see the
+"batch status" note below.
+**Rejected:** a single `JobRunner` instance dedicated to evals with its own
+larger default `timeoutMs` — `container.jobs` is one shared `JobRunner` for
+every kind (`platform/container.ts:93`); giving evals its own instance would
+mean a second `p-queue` (breaking the "concurrency=3 across all job kinds"
+budget note in the plan) and duplicating the DB-backed status machinery for
+no reason a per-kind option doesn't already solve.
+`src/platform/jobs.ts` (`RegisterOptions`, `timeoutMsByKind`).
+
 ### 2026-08-24 — A fit-to-budget trimmer needs raw structured signals, not the already-rendered prompt-input shape
 
 **What:** `risk-brief.ts`'s `fitRiskBriefPromptToBudget(sections, tokenizer,
@@ -194,6 +222,20 @@ of `buildDiffStat`'s existing, already-tested row-selection logic.
   `test/reviews-risk-brief-routes.it.test.ts`.
 
 ## What Doesn't Work
+
+- **2026-08-27** — `parseUnifiedDiff` (`src/adapters/git/diff-parser.ts`)
+  NEVER throws on malformed input — garbage text just degrades to
+  `{ raw, files: [] }` (no `diff --git`/`+++` line matched ⇒ nothing pushed).
+  Do not use "feed it a bad diff string" to test a code path that's supposed
+  to trigger on a parse FAILURE (e.g. an eval case's per-case error-handling
+  path, AC 34 in `specs/04-eval-pipeline.md`) — it will silently succeed
+  with zero files instead. To exercise a genuine per-case throw in
+  `evals/runner.ts#runOneCase`, use a malformed `expected_output` written
+  directly via `db.insert(t.evalCases)` (bypassing the route's
+  `EvalExpectationArray` validation) instead — `EvalExpectationArray.parse()`
+  DOES throw on a shape mismatch, unlike the diff parser.
+  `test/evals-runs.it.test.ts` ("one malformed case does not abort the
+  batch").
 
 - **2026-08-18** — Any `*.it.test.ts` that POSTs `/pulls/:id/review` and only
   overrides `llm.openai` (the near-universal pattern —
@@ -289,6 +331,55 @@ of `buildDiffStat`'s existing, already-tested row-selection logic.
   fixes. `src/modules/*/routes.ts`
 
 ## Codebase Patterns
+
+- **2026-08-27** — Race-safe `(owner_id, name)` conflict detection for
+  `eval_cases` create/finding→case (SPEC-04 AC 7, AC 14) uses
+  `.onConflictDoNothing().returning()` and treats an `undefined` return as
+  "already existed" — same shape as `AgentsRepository.setSkills`'s
+  `onConflictDoUpdate` reasoning below (2026-08-12): a plain
+  check-then-insert has a race window two concurrent callers (e.g. two
+  reviewers double-clicking "Turn into eval case" on the same finding) can
+  both pass. `EvalsRepository.insertCase` (`src/modules/evals/repository.ts`).
+
+- **2026-08-26** — "Restore/replay a past agent version" cannot be done with
+  `getVersion()` + `update()` alone, despite that looking like the obvious
+  composition. `AgentVersionConfig` snapshots NINE fields
+  (`provider`, `model`, `system_prompt`, `output_schema`, `strategy`,
+  `ci_fail_on`, `repo_intel`, `skills[]`, `context_docs[]` —
+  `src/vendor/shared/contracts/knowledge.ts:339-355`), but
+  `AgentsService.update()`'s patch type accepts only the first seven; the
+  two array fields are written exclusively through `setSkills` /
+  `setContextDocs` (`src/modules/agents/service.ts:152,211`). So a rollback
+  built the obvious way silently restores the old *prompt and model* while
+  leaving *today's* skill links attached — a live config that never
+  historically existed, and nothing in the type system flags it (the two
+  fields simply aren't in the patch). Note this directly undercuts
+  `AgentVersionConfig`'s own doc comment, which claims the snapshot exists
+  for "reproducibility (eval replays a past version)". Anything replaying a
+  version must either call all three methods or explicitly scope itself to
+  the config-only subset. Surfaced designing SPEC-04's promote control.
+  **Settled 2026-08-26:** SPEC-04 takes the config-only subset and requires
+  the control to be labelled `"Promote prompt & model vN"` rather than
+  `"Promote vN"` (`specs/04-eval-pipeline.md` ACs 58-59). Rejected:
+  extending the restore to call all three methods — there is no
+  transaction spanning them, so a full rollback can fail halfway and leave
+  the agent in a state neither version describes. If you add a
+  `restoreVersion` later, keep the scope explicit in its name/JSDoc; the
+  bug this prevents is a partial revert behind a label promising a whole
+  one.
+  **Implemented 2026-08-26** (`AgentsService.restoreVersion`,
+  `src/modules/agents/service.ts`; route `POST
+  /agents/:id/versions/:version/restore`, `src/modules/agents/routes.ts`):
+  composes `getVersion()` + `update()` exactly as scoped above, restoring
+  only the seven `update()`-accepted fields. One extra thing worth noting
+  for a future reader — the "fails loudly on a malformed snapshot"
+  requirement (SPEC-04's Untrusted-inputs section, `agent_versions
+  .config_json` is untyped jsonb) needed **no extra code**: `getVersion()`
+  already runs the stored `config_json` through `AgentVersionConfig.parse()`
+  inside `helpers.ts#toAgentVersionDto`, which throws (uncaught) on a
+  partial/malformed snapshot before `restoreVersion` ever sees it. Don't
+  add a second guard around that call — it would only mask which layer the
+  throw actually came from.
 
 - **2026-08-24** — For a single-column `jsonb` blob holding a WHOLE Zod-typed
   object (e.g. `pr_brief.json` — one `PrRiskBrief`, unlike `pr_intent`'s
@@ -425,6 +516,22 @@ of `buildDiffStat`'s existing, already-tested row-selection logic.
   `Intent.source` value, unlike `confidence`).
   `server/src/modules/reviews/repository/pull.repo.ts` (`getIntent`).
 
+- **2026-08-27** — Hand-typing both a fixture unified diff's `@@ -o,ol +n,nl
+  @@` header AND a matching `expected_output` line range (SPEC-04's eval
+  cases) is exactly the kind of arithmetic that silently drifts — an
+  off-by-one in either place produces a case that's "unpassable by
+  construction" (spec, Edge cases) with no error, just a permanently-failing
+  case. Fix used in `db/fixtures/eval-cases.ts`: build each diff from a typed
+  `DiffLine[]` (`{kind: 'add'|'del'|'ctx', text}`), derive `oldLines`/
+  `newLines` from that array with `.filter().length` instead of counting by
+  eye, and derive each expectation's `start_line`/`end_line` by replaying the
+  same `newLineCursor` increment rule `parseUnifiedDiff` uses
+  (`newLineNumberAt(newStart, lines, index)`) against the SAME array the diff
+  string was built from. Verified end-to-end by seeding into a real DB and
+  reading `expected_output` back (`docker exec ... psql ... select
+  expected_output from eval_cases`) rather than trusting the hand-derived
+  numbers. `server/src/db/fixtures/eval-cases.ts`.
+
 - **2026-08-12** — `server/src/db/seed.ts` inserts skill rows directly via
   `db.insert(t.skills)`, bypassing `SkillsRepository.insert()` — so seeded
   skills got a `skills.version` column but no matching `skill_versions` row
@@ -517,7 +624,25 @@ of `buildDiffStat`'s existing, already-tested row-selection logic.
 
 ## Recurring Errors & Fixes
 
-- **2026-08-18** — `@fastify/rate-limit` is never registered when
+- **2026-08-27** — `git push` rejected with `GH013 ... Push cannot contain
+  secrets` on a commit that only ever held a *synthetic* security-eval
+  fixture, no real credential. `server/src/db/fixtures/eval-cases.ts`'s
+  `hardcoded-stripe-secret-key` case used
+  `'sk_live_51H` + 48 more `x` chars `'` as the
+  must-find diff content — GitHub's push-protection secret scanner matches
+  Stripe's live-key format by prefix + alphanumeric length only (no entropy
+  check), so an all-`x` placeholder of the right shape still trips it.
+  Fixed by replacing the placeholder with a value that keeps the same
+  `sk_live_`/`whsec_` prefixes (still legible to an LLM reviewer as "looks
+  like a Stripe secret") but breaks the scanner's alphanumeric-run pattern
+  with literal underscored words —
+  `'sk_live_FIXTURE_NOT_A_REAL_KEY_0000000000000000'` — no assertion in
+  `evals-cases.it.test.ts` or elsewhere pins the literal string, only the
+  field name and diff position, so this is a safe substitution for any
+  future synthetic-secret fixture in this repo. Any new eval fixture that
+  fabricates a "looks like real secret X" diff should use the same
+  underscored-placeholder trick up front rather than discovering the
+  rejection at push time.
   `config.nodeEnv === 'test'` (`src/app.ts`: "Disabled under test so
   integration suites can hammer endpoints via inject()") — a per-route
   `config: { rateLimit: {...} } }` (e.g. `POST /pulls/:id/review`, `POST
