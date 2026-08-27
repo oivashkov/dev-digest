@@ -12,6 +12,9 @@ import {
   OnboardingState,
   OnboardingGenerateAccepted,
   EvalRun,
+  EvalExpectation,
+  EvalExpectationArray,
+  MAX_EVAL_EXPECTATIONS,
   MemoryItem,
   RunTrace,
   Settings,
@@ -278,6 +281,32 @@ describe('Project Context contracts', () => {
     expect(() =>
       SetContextDocsBody.parse({ repo_id: '11111111-1111-1111-1111-111111111111', paths }),
     ).not.toThrow();
+  });
+
+  it('EvalExpectation defaults `expect` to must_find', () => {
+    const e = EvalExpectation.parse({ file: 'src/a.ts', start_line: 10 });
+    expect(e.expect).toBe('must_find');
+    expect(e.end_line).toBeUndefined();
+  });
+
+  it('EvalExpectationArray accepts a bare empty array', () => {
+    expect(() => EvalExpectationArray.parse([])).not.toThrow();
+  });
+
+  it('EvalExpectationArray rejects an over-cap array', () => {
+    const entries = Array.from({ length: MAX_EVAL_EXPECTATIONS + 1 }, (_, i) => ({
+      file: `src/file-${i}.ts`,
+      start_line: 1,
+    }));
+    expect(() => EvalExpectationArray.parse(entries)).toThrow();
+  });
+
+  it('EvalExpectationArray accepts an at-cap array', () => {
+    const entries = Array.from({ length: MAX_EVAL_EXPECTATIONS }, (_, i) => ({
+      file: `src/file-${i}.ts`,
+      start_line: 1,
+    }));
+    expect(() => EvalExpectationArray.parse(entries)).not.toThrow();
   });
 
   it('a legacy AgentVersionConfig literal without context_docs still parses', () => {

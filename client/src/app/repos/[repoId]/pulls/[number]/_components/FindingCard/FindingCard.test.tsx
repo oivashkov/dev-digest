@@ -1,11 +1,34 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord } from "@devdigest/shared";
 import messages from "../../../../../../../../messages/en/prReview.json";
+
+// Mock the eval-case hook so "Turn into eval case" renders and can be
+// clicked without a network/query client — mirrors PrBriefCard.test.tsx's
+// approach for a directly-called mutation hook.
+const createEvalCaseMutateMock = vi.fn();
+const useCreateEvalCaseFromFinding = vi.fn();
+
+vi.mock("@/lib/hooks/evals", () => ({
+  useCreateEvalCaseFromFinding: (...args: unknown[]) => useCreateEvalCaseFromFinding(...args),
+}));
+
 import { FindingCard } from "./FindingCard";
 
-afterEach(cleanup);
+beforeEach(() => {
+  useCreateEvalCaseFromFinding.mockReturnValue({
+    mutate: createEvalCaseMutateMock,
+    isPending: false,
+    isSuccess: false,
+  });
+});
+
+afterEach(() => {
+  cleanup();
+  createEvalCaseMutateMock.mockReset();
+  useCreateEvalCaseFromFinding.mockReset();
+});
 
 const FINDING: FindingRecord = {
   id: "f1",
@@ -56,5 +79,57 @@ describe("FindingCard (smoke, both themes)", () => {
     expect(onAction).toHaveBeenCalledWith("accept");
     fireEvent.click(screen.getByText("Dismiss"));
     expect(onAction).toHaveBeenCalledWith("dismiss");
+  });
+});
+
+describe("FindingCard — Turn into eval case (SPEC-04 ACs 8-18)", () => {
+  it("un-actioned finding: the control is disabled rather than letting the request round-trip to the server's 400 (AC 17)", () => {
+    renderWithIntl(<FindingCard f={FINDING} defaultExpanded onAction={() => {}} />);
+
+    const button = screen.getByRole("button", { name: "Turn into eval case" });
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+    expect(createEvalCaseMutateMock).not.toHaveBeenCalled();
+  });
+
+  it("accepted finding: clicking creates a case via the hook directly, and success shows a confirmation state", () => {
+    const acceptedFinding: FindingRecord = { ...FINDING, accepted_at: "2026-08-27T00:00:00Z" };
+    const { rerender } = renderWithIntl(
+      <FindingCard f={acceptedFinding} defaultExpanded onAction={() => {}} />,
+    );
+
+    const button = screen.getByRole("button", { name: "Turn into eval case" });
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+    expect(createEvalCaseMutateMock).toHaveBeenCalledWith(
+      acceptedFinding.id,
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
+
+    // Simulate the mutation having resolved — same technique
+    // PrBriefCard.test.tsx uses for a mocked hook's post-mutation state.
+    useCreateEvalCaseFromFinding.mockReturnValue({
+      mutate: createEvalCaseMutateMock,
+      isPending: false,
+      isSuccess: true,
+    });
+    rerender(
+      <NextIntlClientProvider locale="en" messages={{ prReview: messages }}>
+        <FindingCard f={acceptedFinding} defaultExpanded onAction={() => {}} />
+      </NextIntlClientProvider>,
+    );
+
+    const doneButton = screen.getByRole("button", { name: "Turn into eval case" });
+    expect(doneButton).toBeDisabled();
+    expect(doneButton).toHaveAttribute("title", "Eval case created.");
+  });
+
+  it("dismissed finding: the control is enabled (mirrors the must_not_flag direction, AC 10)", () => {
+    const dismissedFinding: FindingRecord = { ...FINDING, dismissed_at: "2026-08-27T00:00:00Z" };
+    renderWithIntl(<FindingCard f={dismissedFinding} defaultExpanded onAction={() => {}} />);
+
+    const button = screen.getByRole("button", { name: "Turn into eval case" });
+    expect(button).not.toBeDisabled();
   });
 });

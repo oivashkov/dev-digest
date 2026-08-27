@@ -6,9 +6,12 @@ with `repo-intel`, stores agents, and runs the reviewer (diff → `reviewer-core
 (pgvector). Adapters (LLM, GitHub, GitLab, git, ast-grep, …) sit behind a DI
 container so they can be swapped for mocks in tests.
 
-> This is the **starter** module set, plus `skills` (L02, landed). Later course
+> This is the **starter** module set, plus `skills` (L02, landed) and `evals`
+> (L06, landed — SPEC-04 Eval Pipeline: per-agent frozen case sets, an async
+> batch runner, and code-only recall/precision/citation_accuracy scoring, see
+> [`../specs/04-eval-pipeline.md`](../specs/04-eval-pipeline.md)). Later course
 > lessons add their own modules (intent/smart-diff, blast,
-> brief/context/onboarding, eval/ci/hooks, memory, plugins, …) — each is a
+> brief/context/onboarding, ci/hooks, memory, plugins, …) — each is a
 > self-contained `modules/<name>/` plugin plus, usually, a slot it starts
 > feeding the reviewer prompt. The DB schema already contains **every** table;
 > the unused ones simply sit empty until a lesson fills them.
@@ -77,11 +80,14 @@ flowchart TB
     reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)<br/>/pulls/:id/intent (GET) · /pulls/:id/intent/refresh (POST)<br/>/pulls/:id/brief (GET) · /pulls/:id/brief/refresh (POST)"]
   end
   subgraph Agents["Agents"]
-    agents["agents<br/>/agents · /agents/:id<br/>/agents/:id/skills (link/reorder)"]
+    agents["agents<br/>/agents · /agents/:id<br/>/agents/:id/skills (link/reorder)<br/>/agents/:id/versions · /agents/:id/versions/:v · /:v/restore"]
   end
   subgraph Skills["Skills"]
     skills["skills<br/>/skills · /skills/:id<br/>/skills/:id/versions · /:id/versions/:v/restore<br/>/skills/:id/stats · /skills/import/preview"]
     conventions["conventions<br/>/repos/:id/conventions · /repos/:id/conventions/extract<br/>/conventions/:id (PATCH)"]
+  end
+  subgraph Eval["Eval pipeline (L06)"]
+    evals["evals<br/>/agents/:id/eval-cases (GET/POST) · /eval-cases/:id (PUT/DELETE)<br/>/eval-cases/:id/run (sync) · /findings/:id/eval-case*<br/>/agents/:id/eval-runs (POST, async batch) · /agents/:id/eval-runs/:batchId<br/>/agents/:id/eval-dashboard · /eval-dashboard"]
   end
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]
@@ -92,6 +98,12 @@ flowchart TB
   end
   HEALTH["/health (liveness) · /health/ready (DB ping → 200/503)"]
 ```
+
+\* `POST /findings/:id/eval-case` is registered by `evals/routes.ts`, not
+`reviews/routes.ts`, despite sharing the `/findings/:id/*` prefix with
+`accept`/`dismiss` — a module owns writes to its own tables (here,
+`eval_cases`), and this is the one path prefix served by two plugins. See
+`modules/evals/routes.ts`'s header doc comment.
 
 ## Environment
 

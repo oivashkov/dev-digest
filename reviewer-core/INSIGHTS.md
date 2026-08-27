@@ -49,6 +49,21 @@ _None yet._
 
 ## Codebase Patterns
 
+- **2026-08-26** — A "what fraction of findings cited a real line?" metric
+  CANNOT be computed from `reviewPullRequest`'s returned findings.
+  `ReviewOutcome.review.findings` is already **post**-gate — `run.ts:206`
+  calls `groundFindings` and only `ground.kept` survives into `review`, so
+  any ratio derived from it is `1.0` by construction. The pre-gate total
+  exists only on the outcome's sibling fields: `grounding` (a human string,
+  `"3/4 passed"`, from `groundingSummary`) and `dropped[]` (the dropped
+  findings + reasons). The honest formula is
+  `kept.length / (kept.length + dropped.length)`, i.e.
+  `review.findings.length / (review.findings.length + dropped.length)` —
+  and the `0/0` case (model produced nothing) has to be defined by the
+  caller, since neither field distinguishes "nothing produced" from
+  "nothing dropped". Surfaced designing SPEC-04's `citation_accuracy`
+  (`specs/04-eval-pipeline.md` AC 31-32). `reviewer-core/src/review/run.ts:106-109,205-219`.
+
 - **2026-08-24** — when a package-internal prompt assembler needs to become
   measurable by a caller (e.g. `server/` fitting a prompt to a token
   budget), split the input type rather than exporting the full call-time

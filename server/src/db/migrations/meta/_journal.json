@@ -127,6 +127,13 @@
       "when": 1787490649642,
       "tag": "0017_talented_nick_fury",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787771766272,
+      "tag": "0018_rare_lionheart",
+      "breakpoints": true
     }
   ]
 }

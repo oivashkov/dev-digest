@@ -29,6 +29,51 @@ them here.
 
 ## Decisions
 
+### 2026-08-27 — Compare-runs modal's run history is session-scoped local state, not a server read
+
+**What:** the Agent editor's Evals tab (`EvalsTab/helpers.ts`'s
+`RunHistoryEntry`) builds its own small in-memory array of completed batch
+runs — each captured with `agent.version` + `agent.system_prompt` read from
+the live `agent` prop at the moment "Run all evals" is clicked — instead of
+fetching a list of past runs from the server. The Compare-runs modal (ACs
+49-59) selects two entries from this array; it resets on page reload.
+**Why:** neither `EvalRun` (the batch aggregate, `contracts/knowledge.ts`)
+nor `EvalRunRecord` (the per-case row, `contracts/eval-ci.ts`) — both "given"
+contracts SPEC-04 explicitly does not redesign beyond three named additive
+changes — carries `agent_version` or `batch_id` on the wire, even though
+`eval_runs` gained both **columns** in Step 2. There is also no server route
+that lists past batches, and no client hook for the real, already-landed
+`GET /agents/:id/versions/:version` (Step 5) beyond `useRestoreAgentVersion`
+(Step 7) — adding one was outside this step's Owned paths
+(`client/src/lib/hooks/agents.ts` is Step 7's exclusive file).
+**Rejected:** (a) reading `EvalDashboard.recent_runs` for the run list —
+real, persisted, cross-session data, but each row is missing exactly the one
+field (`agent_version`) the whole modal exists to diff on; (b) adding a
+`useAgentVersion`/`useAgentVersions` hook to `hooks/agents.ts` myself — the
+server route already exists for real, but the file is outside this step's
+Owned paths, and a sibling step could be editing it concurrently.
+`client/src/app/agents/[id]/_components/AgentEditor/_components/EvalsTab
+/helpers.ts`.
+**Sharper case found 2026-08-27, manual lab06 walkthrough:** "resets on page
+reload" undersells it — `runHistory` resets on ANY unmount of `EvalsTab`,
+including switching `AgentEditor`'s internal tab away from Evals and back,
+because `AgentEditor.tsx`'s tab body is a plain ternary (`tab === "evals" ?
+<EvalsTab .../> : ...`) that fully unmounts the losing branch. So the
+documented flow "run once, switch to Config, edit + save the prompt, switch
+back to Evals, run again, Compare" cannot work in a single browser tab — the
+Config detour destroys the first run's local entry before a second one can
+join it. Confirmed working workaround: keep the SAME `EvalsTab` mount alive
+across both runs by editing the agent from a second browser tab/window (or a
+raw `PUT /agents/:id` call from the first tab's own console) instead of
+navigating to Config, then sync the first tab's cache with
+`queryClient.setQueryData(["agent", id], response)` so the next "Run eval"
+click captures the new `agent.version`/`system_prompt` instead of a stale
+one. Verified end-to-end against a real PR (`oivashkov/dev-digest#32`, agent
+"Test Quality Reviewer"): two runs (v2, v3) landed in the same session's
+`runHistory` and the Compare modal correctly showed both the metric deltas
+and the system-prompt diff.
+`client/src/app/agents/[id]/_components/AgentEditor/AgentEditor.tsx`.
+
 ### 2026-08-06 — Hover popovers render through a portal, not `position: absolute`
 
 **What:** the FINDINGS column's per-severity hover tooltip
@@ -47,9 +92,74 @@ constraint bites.
 
 ## What Works
 
-_None yet._
+- **2026-08-27** — a hook whose server endpoint returns a shape with no
+  matching `@devdigest/shared` contract (e.g. a `202 { job_id, batch_id }`
+  batch-dispatch response, or a `GET .../:batchId` status envelope) does not
+  need one invented just to satisfy "types come from `@devdigest/shared`" —
+  declare the interface locally in the hook file instead, same as `reviews.ts`
+  already does for `ActiveRun`. `POST /agents/:id/eval-runs` and
+  `GET /agents/:id/eval-runs/:batchId` (SPEC-04) are this shape: the spec's
+  own "jobs table has no result column" note is *why* no schema exists for
+  either response — there's nothing generic enough about a one-hook, one-
+  route envelope to justify a new cross-package schema for it. Reserve
+  `@devdigest/shared` additions for values a domain object actually models
+  (`EvalRun`, `EvalCase`), not every HTTP response wrapper.
+  `client/src/lib/hooks/evals.ts` (`EvalBatchAccepted`, `EvalBatchStatus`).
 
 ## What Doesn't Work
+
+- **2026-08-27** — Making a previously-pure-presentational, widely-reused
+  component (`FindingCard`, rendered by `FindingsPanel` AND
+  `SmartDiffViewer`) call a TanStack Query hook directly — as SPEC-04 Step 8
+  explicitly instructs for "Turn into eval case", to avoid smuggling a new
+  action into the `FindingActionKind` enum `actOnFinding` rejects — breaks
+  every EXISTING test of every OTHER component that renders it, because
+  those tests never needed a `QueryClientProvider` ancestor before. Confirmed
+  via `pnpm exec vitest run --changed`: `FindingsPanel.test.tsx` and
+  `SmartDiffViewer.test.tsx` (3 tests) started failing with `No QueryClient
+  set, use QueryClientProvider to set one` — neither file is in the
+  eval-pipeline plan's Owned paths for any step, so nobody's plan step
+  covers fixing them. Extracting the hook call into its own child component
+  mounted only inside the `expanded` action row (not unconditionally in
+  `FindingCard`'s body) reduces the blast radius for genuinely-collapsed
+  cards, but does NOT eliminate it — `FindingsPanel.tsx:70` passes
+  `defaultExpanded={i === 0}`, so the first finding in any list is always
+  expanded by default, and that alone still crashes its own smoke test. The
+  actual fix (not applied here, out of Step 8's owned paths) is the same
+  one-line pattern already established for `FindingCard`'s OWN test
+  (`FindingCard.test.tsx`) and `PrBriefCard.test.tsx`: `vi.mock("@/lib/hooks/
+  evals", () => ({ useCreateEvalCaseFromFinding: () => ({ mutate: vi.fn(),
+  isPending: false, isSuccess: false }) }))` added to both files — NOT
+  wrapping the render in a real `QueryClientProvider`, which would be the
+  first instance of that pattern in this codebase's tests (every other
+  hooks-using component's test mocks the hook module instead, e.g.
+  `FindingsPanel.test.tsx` already mocks `useFindingAction` this same way).
+  Any future step that adds a real data hook to an already-widely-consumed
+  presentational component should grep for every existing consumer's test
+  file FIRST and budget the matching `vi.mock` line for each, not assume the
+  new hook's own test file is the only one affected.
+  `client/src/app/repos/[repoId]/pulls/[number]/_components/FindingCard/FindingCard.tsx`.
+
+- **2026-08-27** — `reviewer-core/src/index.ts` does NOT export `buildLineIndex`
+  (only `grounding.ts`/`output/to-review.ts` use it internally) — contrary to
+  what SPEC-04's plan and this step's own task instructions both asserted
+  ("reviewer-core exports buildLineIndex from its package index"). Worse for
+  a client consumer regardless: `client/tsconfig.json` and
+  `client/vitest.config.ts` have **no** path alias to
+  `@devdigest/reviewer-core` at all — grep confirms zero existing imports
+  from `client/src`; that package is server-only infrastructure. AC 78's
+  out-of-hunk warning (Evals tab case editor) could not import the real
+  function either way, even if it were exported. Fix: a small local
+  reimplementation of just `buildLineIndex`'s fallback branch (whole-hunk
+  new-range coverage, not the line-by-line `newLineNumbers` branch) in
+  `CaseEditorModal/helpers.ts`, commented as a deliberate deviation. Don't
+  trust a plan's "already exported, confirmed" claim about another
+  package's public surface without grepping that package's own `index.ts`
+  yourself, even when the plan cites a specific source line for the
+  underlying function — the plan's own context-gathering step evidently
+  checked the function's existence, not its actual export list.
+  `client/src/app/agents/[id]/_components/AgentEditor/_components/EvalsTab
+  /_components/CaseEditorModal/helpers.ts`.
 
 - **2026-08-12** — A batched "toggle several checkboxes, then click Save" UI
   reads as broken in this codebase even when its persistence logic is
@@ -211,6 +321,25 @@ _None yet._
   exists, check `messages/en/<ns>.json` for keys nothing renders yet.
   `client/src/app/agents/[id]/_components/AgentEditor/constants.ts`,
   `client/messages/en/agents.json`.
+  **Sharper case found 2026-08-26 speccing SPEC-04 Eval Pipeline:** an
+  ENTIRE unbuilt feature's copy can already be there — `messages/en/eval.json`
+  (84 lines: `dashboard`, `caseEditor`, `evalsTab`, `page` breadcrumbs) is
+  read by zero components, and `shell.json`'s `nav.eval` + `agents.json`'s
+  `editor.tabs.{evals,stats,ci}` pre-declare a sidebar entry and three agent
+  tabs that `nav.ts` and `AgentEditor/constants.ts` don't have. The useful
+  part is the INVERSE read: **what the pre-written copy is MISSING marks the
+  parts of a design that were never agreed.** `eval.json` has no `compare.*`
+  section at all (nothing for the Compare-runs modal's title, delta cards,
+  system-prompt-diff panel, or "Promote"), `caseEditor.tabs` has only
+  `diff`/`prMeta` where the design shows Diff/Files/PR meta, and
+  `prReview.json`'s `finding.*` has `learn`/`replyToAuthor` but no "Turn into
+  eval case". Diff the screenshots against the namespace key-by-key before
+  scoping — a missing key is a real open question, not an oversight to fill
+  in silently. `client/messages/en/eval.json`, `specs/04-eval-pipeline.md`
+  (Open questions 15-16). **Filled 2026-08-27 in SPEC-04 plan Step 7** — all
+  8 gaps (the 4 named here plus 4 more the plan's own review found: Run-on-
+  save toggle, finding-skeleton helper, out-of-hunk warning, Run-all-agents
+  case-count confirmation) now have copy in `eval.json`/`prReview.json`.
 - **2026-08-10** — `@devdigest/ui`'s barrel (`vendor/ui/index.ts`)
   unconditionally re-exports `./charts` (Recharts-based `LineChart` etc.),
   which is not safe to evaluate in the RSC/server bundle — importing
@@ -303,6 +432,73 @@ _None yet._
   `client/src/app/repos/[repoId]/pulls/[number]/_components/BlastRadiusCard/_components/BlastRadiusGraph/helpers.ts`.
 
 ## Tool & Library Notes
+
+- **2026-08-27** — RTL's default `getByText`/`queryByText` matcher
+  (`getNodeText` in `@testing-library/dom`) only concatenates an element's
+  **direct** text-node children — it does NOT include a nested element's
+  text, even though `node.textContent` would. `MetricCard`'s
+  `{value}{suffix && <span>{suffix}</span>}` renders `value` as a bare text
+  node and `suffix` inside its own `<span>`, so `getByText("75%")` throws
+  "text is broken up by multiple elements" — the query that matches is the
+  bare value, `getByText("75")`. A sibling pattern in the SAME file,
+  `{Math.round(...)}%` written with the `%` as **raw JSX text** (no wrapping
+  span), concatenates fine and `getByText("75%")` matches it correctly — the
+  wrapping element is what breaks the match, not the literal text next to a
+  number. When asserting on a rendered number+suffix, check whether the
+  suffix is JSX text or its own element before picking the query string;
+  don't assume `value + suffix` is queryable as one string.
+  `client/src/app/eval/_components/EvalDashboardView/_components/AgentDashboardCard/AgentDashboardCard.tsx`
+  (raw-text pattern, matches `"75%"`) vs.
+  `client/src/vendor/ui/charts/MetricCard.tsx` (wrapped-span pattern,
+  matches only `"75"`).
+
+- **2026-08-27** — `@devdigest/shared`'s `EvalDashboard.recent_runs`
+  (`EvalRunRecord[]`) and the Compare-runs feature's `RunHistoryEntry`
+  (session-scoped, `EvalsTab/helpers.ts`) are TWO DIFFERENT granularities
+  that both plausibly answer "recent runs" and must not be conflated: the
+  former is one row per **eval case** (persisted, server-sourced, no
+  `batch_id`/`agent_version`), the latter is one row per **dispatched
+  batch** (in-memory only, carries both). Building the `/eval/:agentId`
+  drill-down page's Compare-checkbox table off `recent_runs` looks like the
+  obvious reuse (a `RecentRunsTable` component already existed rendering
+  exactly that data) but can't work — there is no `batch_id` on an
+  `EvalRunRecord` to select/diff by. Deleted the old per-case
+  `RecentRunsTable` (`_components/AgentDashboardCard/_components/
+  RecentRunsTable/`, dead after the list page stopped showing it inline)
+  rather than trying to adapt it — the drill-down page's table is sourced
+  from its own `RunHistoryEntry[]` state instead, same pattern `EvalsTab`
+  already uses. See the 2026-08-27 Decision above ("Compare-runs modal's run
+  history is session-scoped") for why no persisted, batch-scoped run list
+  exists at all yet.
+
+- **2026-08-27** — `@devdigest/ui`'s `Sparkline` (`vendor/ui/charts/Sparkline.tsx`)
+  divides by `data.length - 1` to place points on its x-axis, so passing it a
+  single-point trend array — a real case, not a hypothetical one (SPEC-04 AC
+  65: "an agent has exactly one recorded run") — computes `0/0` and renders
+  `cx="NaN"`/`d="MNaN,..."`, logging React's "Received NaN for the `cx`
+  attribute" warning. `vendor/ui` is off-limits to edit
+  (`client/AGENTS.md`); the fix is a consumer-side guard — never pass
+  `MetricCard`'s `trend` prop a single-element array; pass `undefined`
+  instead (`MetricCard` already skips rendering the sparkline when `trend`
+  is falsy). Caught only by reading a vitest stderr warning during a scoped
+  test run, not by the assertions themselves — worth scanning stderr output
+  even on a green run. **Moved 2026-08-27 (same day, UI-polish follow-up)**
+  from `AgentDashboardCard/helpers.ts` to route-root
+  `client/src/app/eval/helpers.ts` (`trendOrUndefined`) once the new
+  `/eval/:agentId` drill-down page needed the same guard for its own
+  `MetricCard` tiles — a second, unrelated consumer is exactly
+  `frontend-architecture`'s bar for promoting a component-local helper.
+- **2026-08-27** — `window.confirm()` (not a custom `Modal`) is this app's
+  existing pattern for a one-line, no-side-panel confirmation gate before a
+  consequential action — `useShellContext.ts:44-46`'s repo-removal flow
+  already does `window.confirm(t("removeRepo.confirm", {...}))`. Reused the
+  same shape for the Eval Dashboard's "Run all agents" gate (SPEC-04 ACs
+  72-73, `eval.json`'s `dashboard.confirmRunAll`) instead of building a
+  bespoke confirm Modal — saves a component, a footer Cancel/Confirm i18n
+  pair, and matches precedent. In an RTL test, `vi.spyOn(window,
+  "confirm").mockReturnValue(false | true)` — jsdom's own `window.confirm`
+  is a no-op stub, so an unmocked call reads as an unconditional "cancel".
+  `client/src/app/eval/_components/EvalDashboardView/EvalDashboardView.tsx`.
 
 - **2026-08-20** — `@devdigest/ui`'s `Button` only varies visually on the
   `active` prop for `kind="tertiary"` (`Button.tsx`'s `kinds` map keys

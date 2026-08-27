@@ -6,6 +6,7 @@ import { api } from "../api";
 import type {
   Agent,
   AgentSkillLink,
+  AgentVersion,
   AttachedContextDoc,
   ModelInfo,
   Provider,
@@ -141,5 +142,43 @@ export function useSetAgentContextDocs() {
     onSuccess: (_data, { agentId, repoId }) => {
       qc.invalidateQueries({ queryKey: ["agent-context-docs", agentId, repoId] });
     },
+  });
+}
+
+/** POST /agents/:id/versions/:version/restore → 200 Agent — "Promote prompt
+ *  & model vN" (SPEC-04 ACs 54-59). Restores that version's stored
+ *  `config_json` onto the agent through `AgentsService.update()`'s existing
+ *  patch path, which snapshots a NEW version rather than mutating history
+ *  (AC 57) — only `provider`/`model`/`system_prompt`/`output_schema`/
+ *  `strategy`/`ci_fail_on`/`repo_intel` are restored; linked skills and
+ *  context documents are left as they stand (AC 58). The server route lands
+ *  in a sibling plan step (Step 5); this hook's shape is fixed by the spec
+ *  regardless of that step's exact landing order. */
+export function useRestoreAgentVersion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, version }: { agentId: string; version: number }) =>
+      api.post<Agent>(`/agents/${agentId}/versions/${version}/restore`),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.setQueryData(["agent", data.id], data);
+    },
+  });
+}
+
+/** GET /agents/:id/versions/:version → one config snapshot (route already
+ *  landed in Step 5 — see `useRestoreAgentVersion`'s doc comment above; only
+ *  the hook was missing). Feeds the Compare-runs modal's system-prompt diff:
+ *  a persisted `EvalRunRecord.agent_version` number has no prompt TEXT of
+ *  its own, this is how the modal turns a version number back into the
+ *  actual `config.system_prompt` string for that point in the agent's
+ *  history. `enabled: false` when `version` is null — a run recorded before
+ *  the `agent_version` column existed has nothing to look up. */
+export function useAgentVersion(agentId: string | null | undefined, version: number | null | undefined) {
+  return useQuery({
+    queryKey: ["agent-version", agentId, version],
+    queryFn: () => api.get<AgentVersion>(`/agents/${agentId}/versions/${version}`),
+    enabled: !!agentId && version != null,
+    staleTime: Infinity, // a past version's snapshot never changes
   });
 }

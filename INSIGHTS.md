@@ -62,6 +62,89 @@ rather than ignoring the instruction. Not chased further this round: the
 job is non-blocking and pass rate is still trending up overall (8→11→12
 on `architecture-reviewer`).
 
+### 2026-08-27 — SPEC-04 Step 11: the plan's Step-4 test-file pointer for gate 3 was wrong; the real scenario lives in `evals-dashboard.it.test.ts`, not `evals-runs.it.test.ts`
+
+**What:** `specs/04-eval-pipeline-plan.md` Step 11 names
+`server/test/evals-runs.it.test.ts` as the home of the "system-prompt
+change + re-run moves recall/precision between two runs" scenario
+`pnpm verify:l06`'s gate 3 checks. Reading that file, it has no such test —
+its three cases are the zero-cases `400`, a single synchronous run, and a
+batch dispatch with one malformed case; none bumps `agents.version` or
+diffs two runs. The actual scenario — two real batch runs of the *same*
+case, `PUT /agents/:id` bumping `system_prompt` between them, `MockLLMProvider`
+swapped per run, then asserting `body.delta.precision` moved and `alert`
+names it — is `evals-dashboard.it.test.ts`'s first test, `'computes
+delta/alert across two runs of the same case set, filters by since, and
+rejects a malformed since with 422'`.
+**Why:** `scripts/verify-l06.sh`'s gate 3 must invoke a real, existing named
+test per the plan's own instruction ("the script does not duplicate
+assertions" — it only re-invokes owned tests), so pointing it at the wrong
+file would either silently no-op (0 tests matched) or require writing new
+assertions the plan explicitly forbade. Verified by reading both files',
+grepping `agent_version`/`system_prompt` across all three `evals-*.it.test.ts`
+files, and confirming the dashboard file's docstring literally says "Two
+real batch runs of the SAME case, at two different `agents.version`s".
+**Rejected:** silently pointing gate 3 at `evals-runs.it.test.ts` anyway (it
+would report 0 tests matched under any `-t` filter targeting this scenario,
+which the script's `SKIP` classification would correctly flag as a failure,
+not a false pass — but that's a worse outcome than fixing the pointer).
+**Check:** `server/test/evals-dashboard.it.test.ts:126-181`,
+`scripts/verify-l06.sh` (Gate 3 section), `specs/04-eval-pipeline-plan.md`
+Step 11.
+
+### 2026-08-27 — `pnpm run <script>` from a dependency-free root `package.json` writes a stray root `pnpm-lock.yaml` as a side effect, even with zero dependencies
+
+**What:** pnpm v11.20.0 writes an empty-importer `pnpm-lock.yaml`
+(`lockfileVersion: '9.0' / importers: . : {}`) at the repo root within
+seconds of running `pnpm run verify:l06` (or any `pnpm run <script>`) from
+a directory whose `package.json` has no `dependencies`/`devDependencies`
+and no existing lockfile — reproduced 3× in a row, every time, before the
+invoked script's own first line of output even appears. This directly
+threatens the repo's "not a monorepo workspace" invariant (root
+`AGENTS.md`, 2026-07-31 entry below): a root `pnpm-lock.yaml` existing at
+all is the exact signal that would make a future reader believe this
+repo IS a pnpm workspace.
+**Why:** appears to be pnpm's own project-resolution step for `run`,
+unrelated to anything the invoked script does — no `--no-lockfile` flag
+exists for `pnpm run` (only for `pnpm install`), and neither `server/.npmrc`
+nor `client/.npmrc` sets `lockfile=false` (setting that at the root would
+risk leaking into those real subpackages' own lockfile enforcement via
+pnpm's hierarchical `.npmrc` resolution — not attempted, too risky for an
+unverified payoff).
+**Fix:** `scripts/verify-l06.sh` self-heals — a `scrub_stray_root_lockfile`
+helper runs at both start and exit (via `trap`), deleting
+`pnpm-lock.yaml` ONLY when it is (a) untracked by git and (b) matches
+pnpm's exact empty-stub shape; a real, intentionally-committed lockfile
+(tracked, or containing actual dependency entries) is left untouched.
+Confirmed clean after a full `pnpm run verify:l06` invocation: script exits
+0, root has no `pnpm-lock.yaml` afterward.
+**Rejected:** adding a root `.npmrc` with `lockfile=false` — would need
+verifying it doesn't leak into `server/`/`client/`'s own pnpm config
+resolution before trusting it repo-wide, and `scripts/verify-l06.sh`
+(an Owned path already granted to this step) was sufficient to fully
+solve it without a new file.
+**Check:** `scripts/verify-l06.sh` (`scrub_stray_root_lockfile`).
+
+### 2026-08-27 — SPEC-04 case-editor warning cannot assume a direct client import from `reviewer-core`
+
+**What:** `specs/04-eval-pipeline.md` AC 78 requires the case editor's
+out-of-hunk warning to be computed with `reviewer-core`'s exported
+`buildLineIndex`, but `client/` currently has no `reviewer-core` package
+dependency or tsconfig alias. A plan that puts this warning directly in a
+Client Component must first add an explicit supported sharing path
+(contract/shared helper, server validation endpoint, or a deliberate
+client tsconfig/package change).
+**Why:** `client/tsconfig.json` only maps `@/*`, `@devdigest/shared/*`,
+and `@devdigest/ui/*`, while `client/package.json` has no
+`reviewer-core` dependency. Importing the helper ad hoc from the UI lane
+will fail typecheck/build rather than merely violating style.
+**Rejected:** relying on cross-package source imports implicitly because
+the repo uses tsconfig aliases elsewhere — the client package's own config
+is the boundary that matters here.
+**Check:** `client/tsconfig.json:22-28`, `client/package.json:12-23`,
+`specs/04-eval-pipeline.md:460-464`,
+`specs/04-eval-pipeline-plan.md:164`.
+
 ### 2026-08-26 — `agent-evals` moved off DeepSeek to `google/gemini-2.5-flash`: first live run showed hallucinated absolute file paths, not a partial quality gap
 
 **What:** `.github/workflows/evals.yml`'s `agent-evals` job's default
@@ -470,6 +553,36 @@ input but left responses unchecked, so contract drift surfaced in the browser.
 _None yet._
 
 ## Codebase Patterns
+
+- **2026-08-26** — SPEC-04 Step 1's `EvalExpectation` array cap could not be
+  put on `EvalCaseInput.expected_output` itself, because that field is
+  deliberately `z.unknown()` (validated as `z.array(EvalExpectation)` only at
+  the route boundary, AC 48) — capping it there would have re-typed a field
+  the plan says stays untouched. Added a second exported schema,
+  `EvalExpectationArray = z.array(EvalExpectation).max(MAX_EVAL_EXPECTATIONS)`,
+  alongside `EvalExpectation` in `contracts/eval-ci.ts`, for the route layer
+  to import and parse `expected_output` against — `EvalExpectation` alone has
+  no length bound. Whoever builds the `evals/` routes (SPEC-04 Step 4) needs
+  `EvalExpectationArray`, not a bare `z.array(EvalExpectation)`, or AC 48's
+  cap silently doesn't apply. `server/src/vendor/shared/contracts/eval-ci.ts`,
+  `client/src/vendor/shared/contracts/eval-ci.ts` (byte-identical block in
+  both copies).
+
+- **2026-08-26** — A doc comment on a contract can assert a capability the
+  schema doesn't actually support. `AgentVersionConfig`'s comment
+  (`server/src/vendor/shared/contracts/knowledge.ts:334-338`) says the
+  `agent_versions` snapshot exists "for reproducibility (**eval replays a
+  past version**)" — but `eval_runs` (`server/src/db/schema/eval.ts:22-35`)
+  has **no** version column and no agent link at all: its only FK is
+  `case_id → eval_cases`, and `eval_cases.owner_id` is a bare `uuid` with no
+  FK either. So a run is attributable to an *agent* (transitively) but never
+  to the `agents.version` / `agent_versions.config_json.system_prompt` it
+  ran under — the exact thing an old-prompt-vs-new-prompt comparison needs.
+  `eval_runs` also has no `batch_id`, so "one aggregate per run of the case
+  set" has nowhere to be grouped from. Both surfaced speccing SPEC-04
+  (`specs/04-eval-pipeline.md` Open questions 1-2). **Before trusting a
+  contract comment that names a downstream use case, check that the
+  downstream table actually carries the join column it implies.**
 
 - **2026-08-26** — An eval case file (`*.cases.ts`) can encode assumptions
   about a subagent's behavior that the subagent's own `.md` prompt never

@@ -324,3 +324,35 @@ export const AgentSkillLink = z.object({
   order: z.number().int(),
 });
 export type AgentSkillLink = z.infer<typeof AgentSkillLink>;
+
+// The immutable config snapshot captured in `agent_versions` whenever an agent's
+// config changes (everything but `enabled`). Mirrors the shape written by the
+// agents repository — provider/model/prompt/output_schema/strategy/gate/repo_intel
+// plus the ordered skill ids linked at snapshot time. Used for reproducibility
+// (eval replays a past version) and for surfacing an agent's edit history.
+export const AgentVersionConfig = z.object({
+  provider: Provider,
+  model: z.string(),
+  system_prompt: z.string(),
+  output_schema: z.unknown().nullish(),
+  strategy: ReviewStrategy,
+  ci_fail_on: CiFailOn,
+  repo_intel: z.boolean(),
+  skills: z.array(z.string()),
+  // Attached project-context document PATHS (not content) at snapshot time —
+  // same reproducibility rationale as `skills` above (Q10). `.default([])`
+  // means every HAND-BUILT `AgentVersionConfig` literal must be updated by
+  // hand too; grep them, don't trust a clean typecheck (root INSIGHTS.md,
+  // 2026-08-18 — `agent_versions.config_json` is untyped jsonb, so this is
+  // invisible to `tsc` in both directions).
+  context_docs: z.array(z.string()).default([]),
+});
+export type AgentVersionConfig = z.infer<typeof AgentVersionConfig>;
+
+export const AgentVersion = z.object({
+  agent_id: z.string(),
+  version: z.number().int(),
+  config: AgentVersionConfig,
+  created_at: z.string(),
+});
+export type AgentVersion = z.infer<typeof AgentVersion>;

@@ -9,10 +9,15 @@
     "metricTrend": "Metric trend",
     "recentRuns": "Recent runs",
     "noRuns": "No runs yet. Create an eval case and run it.",
+    "lastRunSubtitle": "Last run v{version} · {ranAt} · {passed}/{total} pass",
+    "sinceLabel": "Show runs since",
+    "runAllAgents": "Run all agents",
+    "confirmRunAll": "Run eval for every agent — {count, plural, one {# case} other {# cases}} across every set. Continue?",
     "metrics": {
       "recall": "RECALL",
       "precision": "PRECISION",
-      "citationAccuracy": "CITATION ACCURACY"
+      "citationAccuracy": "CITATION ACCURACY",
+      "tracesPassed": "TRACES PASSED"
     },
     "legend": {
       "recall": "Recall",
@@ -20,6 +25,7 @@
       "citation": "Citation"
     },
     "table": {
+      "version": "Version",
       "ranAt": "Ran at",
       "recall": "Recall",
       "precision": "Precision",
@@ -42,8 +48,10 @@
     "inputLabel": "Input",
     "tabs": {
       "diff": "Diff",
-      "prMeta": "PR meta"
+      "prMeta": "PR meta",
+      "files": "Files"
     },
+    "filesHint": "One file path per line.",
     "diffPlaceholder": "--- a/src/config.ts\n+++ b/src/config.ts\n@@ -10,6 +10,7 @@\n+  stripeKey: \"sk_live_...\"",
     "titleLabel": "Title",
     "titlePlaceholder": "Add Stripe integration",
@@ -53,6 +61,10 @@
     "expectedOutput": "Expected output",
     "validJson": "valid JSON",
     "invalidJson": "invalid JSON",
+    "insertSkeleton": "Insert expectation skeleton",
+    "runOnSave": "Run on save",
+    "runOnSaveHint": "Execute this case immediately after a successful save.",
+    "outOfHunkWarning": "{file}:{line} falls outside every hunk in this diff — this expectation can never match.",
     "lastRunPassed": "Last run passed",
     "lastRunFailed": "Last run failed",
     "resultSummary": "recall {recall}% · precision {precision}% · citation {citation}% · {duration}s"
@@ -71,7 +83,15 @@
     "run": "Run",
     "running": "Running…",
     "edit": "Edit",
-    "delete": "Delete"
+    "delete": "Delete",
+    "confirmDelete": "Delete eval case \"{name}\"? This also removes its run history."
+  },
+  "detail": {
+    "backToAll": "All agents",
+    "subtitle": "Regression harness · {runs, plural, one {# run} other {# runs}} on the {cases}-trace gold set",
+    "agentPickerLabel": "Agent",
+    "noSessionRuns": "Run this agent at least twice to populate the compare table.",
+    "compareCheckboxLabel": "Select run for comparison"
   },
   "page": {
     "crumbSkillsLab": "Skills Lab",
@@ -80,5 +100,21 @@
     "crumbEvals": "Evals",
     "crumbNewCase": "New case",
     "crumbEvalCase": "Eval case"
+  },
+  "compare": {
+    "title": "Compare runs",
+    "close": "Close",
+    "versionLabel": "v{version}",
+    "recall": "Recall",
+    "precision": "Precision",
+    "citationAccuracy": "Citation accuracy",
+    "cost": "Cost",
+    "promptDiffTitle": "System prompt diff",
+    "samePromptConfig": "Configuration is identical — both runs ran the same agent version.",
+    "versionUnknown": "One of these runs predates version tracking, so its system prompt was never recorded — nothing to diff.",
+    "promote": "Promote prompt & model v{version}",
+    "promoting": "Promoting…",
+    "promoteHint": "Restores this version's prompt, model, and other config fields onto the agent. Linked skills and context documents are left as they are.",
+    "confirmPromote": "Promote v{version}'s prompt & model onto this agent? Linked skills and context documents are left as they are."
   }
 }
